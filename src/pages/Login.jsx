@@ -24,7 +24,14 @@ export default function Login() {
     setEnviando(true)
     const { error } = await iniciarSesion(dni, password)
     setEnviando(false)
-    if (error) setError('DNI o contraseña incorrectos.')
+    if (error) {
+      console.error('Error de login:', error)
+      setError(
+        error.message === 'Invalid login credentials'
+          ? 'DNI o contraseña incorrectos.'
+          : `No se pudo iniciar sesión: ${error.message}`,
+      )
+    }
   }
 
   return (
