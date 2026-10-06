@@ -1039,13 +1039,14 @@ BEGIN
     INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password,
                             email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
                             created_at, updated_at, confirmation_token, email_change,
-                            email_change_token_new, recovery_token)
+                            email_change_token_new, recovery_token, email_change_token_current,
+                            phone_change, phone_change_token, reauthentication_token)
     VALUES ('00000000-0000-0000-0000-000000000000', p_id, 'authenticated', 'authenticated',
             v_email, extensions.crypt('Licurgo2026!', extensions.gen_salt('bf')), now(),
             jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email'), 'rol', p_rol),
             jsonb_build_object('dni', p_dni, 'nombre', p_nombre, 'apellido', p_apellido,
                                'telefono', p_telefono, 'plan_id', p_plan_id),
-            now(), now(), '', '', '', '');
+            now(), now(), '', '', '', '', '', '', '', '');
 
     INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider,
                                  last_sign_in_at, created_at, updated_at)
