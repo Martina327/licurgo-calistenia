@@ -77,7 +77,7 @@ CREATE TYPE public.concepto_ingreso    AS ENUM ('Cuota', 'Kiosco', 'Subalquiler'
 
 -- Fecha "de hoy" en Argentina (el servidor de Supabase corre en UTC)
 CREATE FUNCTION public.hoy_ar() RETURNS date
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SET search_path = '' AS $$
     SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date
 $$;
 
@@ -1026,6 +1026,20 @@ REVOKE EXECUTE ON FUNCTION public._extender_membresia(UUID), public._turno_abier
                            public._exigir_rol(public.rol_usuario[]),
                            public.fn_nuevo_usuario_auth()
     FROM PUBLIC, anon, authenticated;
+
+-- Funciones de trigger: fuera de la API (los triggers se disparan igual)
+REVOKE EXECUTE ON FUNCTION public.fn_tocar_rutina(), public.fn_validar_roles_coach_alumno()
+    FROM PUBLIC, anon, authenticated;
+DO $$
+BEGIN
+    IF to_regprocedure('public.fn_validar_progresion()') IS NOT NULL THEN
+        REVOKE EXECUTE ON FUNCTION public.fn_validar_progresion() FROM PUBLIC, anon, authenticated;
+    END IF;
+END $$;
+
+-- Helpers de RLS: solo usuarios logueados (las políticas los necesitan)
+REVOKE EXECUTE ON FUNCTION public.mi_rol(), public.es_staff() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.mi_rol(), public.es_staff() TO authenticated, service_role;
 
 -- RPC públicas: solo usuarios logueados
 REVOKE EXECUTE ON FUNCTION
