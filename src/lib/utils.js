@@ -23,6 +23,15 @@ export const formatearFecha = (iso) => {
   return `${d}/${m}/${a}`
 }
 
+// Fecha de hoy en Argentina como 'YYYY-MM-DD' (misma idea que public.hoy_ar() en la base)
+export const hoyAR = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(new Date())
+
+// Enums de la base (public.categoria_ejercicio y public.bloque_ejercicio).
+// Si cambian en schema.sql, actualizar acá también.
+export const CATEGORIAS_EJERCICIO = ['Tracción', 'Empuje', 'Core', 'Piernas', 'Movilidad', 'Skill']
+export const BLOQUES_EJERCICIO = ['Entrada en calor', 'Fuerza', 'Accesorios']
+
 export const formatearPesos = (n) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n ?? 0)
 
