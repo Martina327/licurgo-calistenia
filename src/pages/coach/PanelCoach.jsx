@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import Cargando from '../../components/Cargando'
 
-// Panel del coach: por ahora lista los alumnos y cuántas observaciones vigentes tiene cada uno.
-// Pendiente (fase 3): diseñar rutinas por días y bloques (CU09) y cargar observaciones (CU10).
+// Panel del coach: lista los alumnos, si tienen rutina activa y cuántas observaciones vigentes.
+// Desde acá se entra a armar la rutina de cada uno (CU09).
+// Pendiente (fase 3): cargar observaciones (CU10).
 export default function PanelCoach() {
   const [alumnos, setAlumnos] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -12,10 +14,16 @@ export default function PanelCoach() {
     Promise.all([
       supabase.from('v_membresias').select('alumno_id, nombre, apellido, plan, estado_membresia').order('apellido'),
       supabase.from('observaciones_alumno').select('alumno_id').eq('vigente', true),
-    ]).then(([alumnosRes, obsRes]) => {
+      supabase.from('rutinas').select('alumno_id').eq('activa', true),
+    ]).then(([alumnosRes, obsRes, rutinasRes]) => {
       const conteo = {}
       for (const o of obsRes.data ?? []) conteo[o.alumno_id] = (conteo[o.alumno_id] ?? 0) + 1
-      setAlumnos((alumnosRes.data ?? []).map((a) => ({ ...a, observaciones: conteo[a.alumno_id] ?? 0 })))
+      const conRutina = new Set((rutinasRes.data ?? []).map((r) => r.alumno_id))
+      setAlumnos((alumnosRes.data ?? []).map((a) => ({
+        ...a,
+        observaciones: conteo[a.alumno_id] ?? 0,
+        tieneRutina: conRutina.has(a.alumno_id),
+      })))
       setCargando(false)
     })
   }, [])
@@ -32,11 +40,22 @@ export default function PanelCoach() {
               <div>{a.apellido}, {a.nombre}</div>
               <div className="text-xs text-neutral-500">{a.plan ?? 'Sin plan'} · {a.estado_membresia}</div>
             </div>
-            {a.observaciones > 0 && (
-              <span className="rounded-full bg-amber-950 px-2.5 py-0.5 text-xs text-amber-300">
-                {a.observaciones} observación(es)
-              </span>
-            )}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {a.observaciones > 0 && (
+                <span className="rounded-full bg-amber-950 px-2.5 py-0.5 text-xs text-amber-300">
+                  {a.observaciones} observación(es)
+                </span>
+              )}
+              {!a.tieneRutina && (
+                <span className="rounded-full bg-neutral-800 px-2.5 py-0.5 text-xs text-neutral-400">Sin rutina</span>
+              )}
+              <Link
+                to={`/coach/alumnos/${a.alumno_id}/rutina`}
+                className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
+              >
+                {a.tieneRutina ? 'Ver rutina' : 'Armar rutina'}
+              </Link>
+            </div>
           </li>
         ))}
       </ul>

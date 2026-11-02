@@ -53,6 +53,11 @@ const MENSAJES = {
   COMPROBANTE_YA_REVISADO: 'Ese comprobante ya fue revisado.',
   SIN_PLAN: 'El alumno no tiene un plan asignado.',
   MOTIVO_REQUERIDO: 'Indicá el motivo del rechazo.',
+  ALUMNO_INEXISTENTE: 'No encontramos a ese alumno (puede estar dado de baja).',
+  RUTINA_INVALIDA: 'Revisá la rutina: falta el nombre o algún dato de un ejercicio.',
+  RUTINA_SIN_DIAS: 'La rutina tiene que tener entre 1 y 7 días.',
+  DIA_VACIO: 'Cada día necesita al menos un ejercicio.',
+  RUTINA_NO_ENCONTRADA: 'Esa rutina ya no está activa (alguien la cambió). Recargá la pantalla.',
   PROGRESION_CICLICA: 'Esa progresión formaría un círculo: el ejercicio elegido ya depende de este.',
 }
 export const mensajeError = (error) => {
