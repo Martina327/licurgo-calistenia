@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, formatearPesos } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
@@ -12,7 +13,8 @@ const COLOR_ESTADO = {
 
 // Pantalla principal del alumno: estado de membresía y alertas (CU07, CU17).
 // La asistencia (CU03) NO la marca el alumno: la registra recepción al llegar.
-// Pendiente (fase 3): subir comprobante, certificado y rutina con checklist (CU11).
+// La rutina con checklist (CU11) está en /alumno/rutina.
+// Pendiente (fase 3): subir comprobante y certificado.
 export default function InicioAlumno() {
   const [membresia, setMembresia] = useState(null)
   const [cargando, setCargando] = useState(true)
@@ -73,6 +75,13 @@ export default function InicioAlumno() {
           <dd>{membresia.estado_certificado}</dd>
         </dl>
       </section>
+
+      <Link
+        to="/alumno/rutina"
+        className="block w-full rounded-xl border border-neutral-700 py-3 text-center font-semibold text-neutral-100 hover:bg-neutral-900"
+      >
+        Ver mi rutina
+      </Link>
 
       <p className="text-center text-xs text-neutral-500">Tu asistencia la registra recepción cuando llegás al gimnasio.</p>
     </div>
