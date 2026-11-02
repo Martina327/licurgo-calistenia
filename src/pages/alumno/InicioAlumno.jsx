@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, formatearPesos, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
@@ -11,7 +12,8 @@ const COLOR_ESTADO = {
 }
 
 // Pantalla principal del alumno: membresía (CU07, CU17) y check-in (CU03).
-// Pendiente (fase 3): subir comprobante, certificado y rutina con checklist (CU11).
+// La rutina con checklist (CU11) está en /alumno/rutina.
+// Pendiente (fase 3): subir comprobante y certificado.
 export default function InicioAlumno() {
   const [membresia, setMembresia] = useState(null)
   const [cargando, setCargando] = useState(true)
@@ -80,6 +82,13 @@ export default function InicioAlumno() {
       >
         Marcar presente
       </button>
+
+      <Link
+        to="/alumno/rutina"
+        className="block w-full rounded-xl border border-neutral-700 py-3 text-center font-semibold text-neutral-100 hover:bg-neutral-900"
+      >
+        Ver mi rutina
+      </Link>
 
       {aviso && (
         <p className={`rounded-lg px-3 py-2 text-sm ${aviso.tipo === 'ok' ? 'bg-emerald-950 text-emerald-300' : 'bg-red-950 text-red-300'}`}>

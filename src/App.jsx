@@ -11,6 +11,7 @@ import PanelCoach from './pages/coach/PanelCoach'
 import CatalogoEjercicios from './pages/coach/CatalogoEjercicios'
 import RutinaAlumno from './pages/coach/RutinaAlumno'
 import InicioAlumno from './pages/alumno/InicioAlumno'
+import MiRutina from './pages/alumno/MiRutina'
 
 // "/" manda a cada uno a su pantalla de inicio según el rol (CU02)
 function Inicio() {
@@ -40,6 +41,7 @@ export default function App() {
           </Route>
           <Route element={<RutaProtegida roles={['Alumno']} />}>
             <Route path="/alumno" element={<InicioAlumno />} />
+            <Route path="/alumno/rutina" element={<MiRutina />} />
           </Route>
         </Route>
       </Route>

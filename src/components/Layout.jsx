@@ -14,7 +14,10 @@ const MENU = {
     { to: '/coach', texto: 'Alumnos y rutinas', end: true },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
   ],
-  Alumno: [{ to: '/alumno', texto: 'Mi membresía' }],
+  Alumno: [
+    { to: '/alumno', texto: 'Mi membresía', end: true },
+    { to: '/alumno/rutina', texto: 'Mi rutina' },
+  ],
 }
 
 export default function Layout() {
