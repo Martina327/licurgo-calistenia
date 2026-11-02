@@ -45,11 +45,15 @@ Contraseña de todos: `Licurgo2026!` — se ingresa con el **DNI**.
 | Rol | DNI | Qué se puede probar |
 | --- | --- | --- |
 | SuperAdmin | 20111111 | Dashboard de ingresos y todas las secciones |
-| Recepcionista | 25222222 | Panel de alertas con link a WhatsApp |
+| Recepcionista | 25222222 | Marcar asistencia, invitaciones a retomar y alertas con WhatsApp |
 | Coach | 30111222 | Listado de alumnos con observaciones |
-| Alumno | 40111001 | Lucía: al día, check-in permitido |
+| Alumno | 40111001 | Lucía: al día |
 | Alumno | 41222002 | Tomás: vence en 2 días (ve la alerta) |
-| Alumno | 39333003 | Camila: vencida (el check-in se bloquea) |
+| Alumno | 39333003 | Camila: vencida (recepción ve el aviso, pero puede marcar el presente) |
+| Alumno | 43444004 | Valentina: en clase de prueba hace 8 días (invitación pendiente) |
+| Alumno | 38555005 | Diego: inactivo, venció hace 40 días (invitación pendiente) |
+
+La asistencia **solo la marca recepción** (o el SuperAdmin). El alumno no tiene botón de presente.
 
 ## 📁 Estructura
 

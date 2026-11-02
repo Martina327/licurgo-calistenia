@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { formatearFecha, formatearPesos, mensajeError } from '../../lib/utils'
+import { formatearFecha, formatearPesos } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 
 const COLOR_ESTADO = {
@@ -11,13 +11,13 @@ const COLOR_ESTADO = {
   'Sin membresía': 'bg-neutral-800 text-neutral-300',
 }
 
-// Pantalla principal del alumno: membresía (CU07, CU17) y check-in (CU03).
+// Pantalla principal del alumno: estado de membresía y alertas (CU07, CU17).
+// La asistencia (CU03) NO la marca el alumno: la registra recepción al llegar.
 // La rutina con checklist (CU11) está en /alumno/rutina.
 // Pendiente (fase 3): subir comprobante y certificado.
 export default function InicioAlumno() {
   const [membresia, setMembresia] = useState(null)
   const [cargando, setCargando] = useState(true)
-  const [aviso, setAviso] = useState(null) // { tipo: 'ok' | 'error', texto }
 
   useEffect(() => {
     // El RLS hace que el alumno solo reciba su propia fila
@@ -30,12 +30,6 @@ export default function InicioAlumno() {
         setCargando(false)
       })
   }, [])
-
-  const marcarPresente = async () => {
-    setAviso(null)
-    const { error } = await supabase.rpc('registrar_checkin')
-    setAviso(error ? { tipo: 'error', texto: mensajeError(error) } : { tipo: 'ok', texto: '¡Presente registrado! Buen entrenamiento.' })
-  }
 
   if (cargando) return <Cargando />
   if (!membresia) return <p className="text-neutral-400">No encontramos tu ficha de alumno.</p>
@@ -54,6 +48,12 @@ export default function InicioAlumno() {
             : dias === 0
               ? 'Tu membresía vence hoy.'
               : `Tu membresía vence en ${dias} día(s).`}
+        </div>
+      )}
+
+      {membresia.estado_alumno === 'En clase de prueba' && (
+        <div className="rounded-xl bg-neutral-800 px-4 py-3 text-sm text-neutral-200">
+          Estás en tu clase de prueba. Cuando abones la primera cuota en recepción, tu cuenta pasa a activa.
         </div>
       )}
 
@@ -76,13 +76,6 @@ export default function InicioAlumno() {
         </dl>
       </section>
 
-      <button
-        onClick={marcarPresente}
-        className="w-full rounded-xl bg-white py-3 font-semibold text-neutral-950"
-      >
-        Marcar presente
-      </button>
-
       <Link
         to="/alumno/rutina"
         className="block w-full rounded-xl border border-neutral-700 py-3 text-center font-semibold text-neutral-100 hover:bg-neutral-900"
@@ -90,11 +83,7 @@ export default function InicioAlumno() {
         Ver mi rutina
       </Link>
 
-      {aviso && (
-        <p className={`rounded-lg px-3 py-2 text-sm ${aviso.tipo === 'ok' ? 'bg-emerald-950 text-emerald-300' : 'bg-red-950 text-red-300'}`}>
-          {aviso.texto}
-        </p>
-      )}
+      <p className="text-center text-xs text-neutral-500">Tu asistencia la registra recepción cuando llegás al gimnasio.</p>
     </div>
   )
 }

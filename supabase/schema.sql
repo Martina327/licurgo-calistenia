@@ -24,6 +24,7 @@
 DROP TRIGGER IF EXISTS trg_nuevo_usuario_auth ON auth.users;
 
 DROP VIEW IF EXISTS public.v_rutina_activa, public.v_membresias, public.v_alertas,
+                    public.v_invitaciones_pendientes,
                     public.v_ingresos_diarios, public.v_concurrencia,
                     public.v_rutina_alumno CASCADE;
 
@@ -32,7 +33,7 @@ DROP TABLE IF EXISTS
     public.fichas_observaciones, public.item_ejercicio, public.rutina_dia,
     -- esquema v2
     public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
-    public.ejercicios, public.asistencias, public.ingresos, public.venta_items,
+    public.ejercicios, public.invitaciones_retomar, public.asistencias, public.ingresos, public.venta_items,
     public.ventas, public.productos, public.espacios_alquiler, public.turnos_caja,
     public.comprobantes_pago, public.certificados_aptos, public.alumnos,
     public.planes, public.usuarios
@@ -49,13 +50,14 @@ DROP FUNCTION IF EXISTS public.fn_set_fecha_actualizacion, public.fn_validar_rol
     public.fn_tocar_rutina, public.registrar_checkin, public.aprobar_comprobante,
     public.rechazar_comprobante, public.registrar_pago_efectivo, public.registrar_venta,
     public.registrar_cobro_alquiler, public.abrir_turno, public.cerrar_turno,
-    public.justificar_cierre, public._crear_usuario_mock,
+    public.justificar_cierre, public.registrar_invitacion, public._crear_usuario_mock,
     public.fn_validar_progresion, public.guardar_rutina CASCADE;
 
 -- Usuarios mock de Supabase Auth (por DNI)
 DELETE FROM auth.users
  WHERE email IN ('20111111@licurgo.test', '25222222@licurgo.test', '30111222@licurgo.test',
-                 '40111001@licurgo.test', '41222002@licurgo.test', '39333003@licurgo.test');
+                 '40111001@licurgo.test', '41222002@licurgo.test', '39333003@licurgo.test',
+                 '43444004@licurgo.test', '38555005@licurgo.test');
 
 
 -- ---------------------------------------------------------------------
@@ -76,7 +78,7 @@ CREATE TYPE public.concepto_ingreso    AS ENUM ('Cuota', 'Kiosco', 'Subalquiler'
 
 -- Fecha "de hoy" en Argentina (el servidor de Supabase corre en UTC)
 CREATE FUNCTION public.hoy_ar() RETURNS date
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SET search_path = '' AS $$
     SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date
 $$;
 
@@ -137,8 +139,11 @@ CREATE TABLE public.alumnos (
     fecha_nacimiento     DATE,
     contacto_emergencia  TEXT,
     fecha_vencimiento    DATE,          -- NULL = nunca pagó. Solo la modifican las funciones de cobro.
-    fecha_alta           DATE NOT NULL DEFAULT public.hoy_ar()
+    fecha_alta           DATE NOT NULL DEFAULT public.hoy_ar(),
+    fecha_clase_prueba   DATE NOT NULL DEFAULT public.hoy_ar()   -- base de la invitación a retomar
 );
+-- Estado del alumno (calculado en v_membresias, no se guarda):
+--   En clase de prueba → nunca pagó · Activo → pagó · Inactivo → venció hace más de 30 días
 CREATE INDEX idx_alumnos_vencimiento ON public.alumnos (fecha_vencimiento);
 
 -- Alta automática del perfil cuando se crea la cuenta en Supabase Auth.
@@ -314,6 +319,21 @@ CREATE TABLE public.asistencias (
     fecha           DATE NOT NULL DEFAULT public.hoy_ar(),
     CONSTRAINT uq_asistencia_diaria UNIQUE (alumno_id, fecha)
 );
+
+
+-- ---------------------------------------------------------------------
+-- 10.1 INVITACIONES A RETOMAR
+--      Recepción abre WhatsApp con el mensaje armado, lo envía a mano y
+--      deja registrada la invitación (clase de prueba sin pagar o inactivo).
+-- ---------------------------------------------------------------------
+CREATE TABLE public.invitaciones_retomar (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    alumno_id    UUID NOT NULL REFERENCES public.alumnos(usuario_id) ON DELETE CASCADE,
+    motivo       TEXT NOT NULL CHECK (motivo IN ('Clase de prueba', 'Inactivo')),
+    enviada_por  UUID NOT NULL DEFAULT auth.uid() REFERENCES public.usuarios(id),
+    enviada_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_invitaciones_alumno ON public.invitaciones_retomar (alumno_id, enviada_at DESC);
 
 
 -- ---------------------------------------------------------------------
@@ -496,38 +516,31 @@ BEGIN
 END $$;
 
 
--- 14.1 Check-in (CU03). El alumno marca su propio presente; recepción puede marcar a cualquiera.
-CREATE FUNCTION public.registrar_checkin(p_alumno_id UUID DEFAULT NULL)
+-- 14.1 Check-in (CU03). Solo Recepción/SuperAdmin. La cuota vencida NO bloquea: se avisa en pantalla.
+CREATE FUNCTION public.registrar_checkin(p_alumno_id UUID)
 RETURNS public.asistencias
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
-    v_rol    public.rol_usuario := public._exigir_rol('{Alumno,Recepcionista,SuperAdmin}');
-    v_alumno UUID := coalesce(p_alumno_id, auth.uid());
-    v_venc   date;
-    v_row    public.asistencias;
+    v_row public.asistencias;
 BEGIN
-    IF v_rol = 'Alumno' AND v_alumno <> auth.uid() THEN
-        RAISE EXCEPTION 'PERMISO_DENEGADO: un alumno solo puede marcar su propio presente';
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+    IF p_alumno_id IS NULL THEN
+        RAISE EXCEPTION 'ALUMNO_REQUERIDO';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.alumnos a JOIN public.usuarios u ON u.id = a.usuario_id
+                    WHERE a.usuario_id = p_alumno_id AND u.activo) THEN
+        RAISE EXCEPTION 'ALUMNO_INEXISTENTE: %', p_alumno_id;
     END IF;
 
-    SELECT a.fecha_vencimiento INTO v_venc
-      FROM public.alumnos a JOIN public.usuarios u ON u.id = a.usuario_id
-     WHERE a.usuario_id = v_alumno AND u.activo;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'ALUMNO_INEXISTENTE: %', v_alumno;
-    END IF;
-    IF v_venc IS NULL OR v_venc < public.hoy_ar() THEN
-        RAISE EXCEPTION 'MEMBRESIA_VENCIDA: acercate a recepción o subí tu comprobante';
-    END IF;
-
+    -- Cuota vencida: NO se bloquea. Recepción ve el aviso en pantalla (v_membresias).
     INSERT INTO public.asistencias (alumno_id, registrado_por)
-    VALUES (v_alumno, auth.uid())
+    VALUES (p_alumno_id, auth.uid())
     ON CONFLICT (alumno_id, fecha) DO NOTHING
     RETURNING * INTO v_row;
 
-    IF v_row.id IS NULL THEN   -- ya había marcado hoy: devolvemos el registro existente
+    IF v_row.id IS NULL THEN   -- ya tenía presente hoy: devolvemos el registro existente
         SELECT * INTO v_row FROM public.asistencias
-         WHERE alumno_id = v_alumno AND fecha = public.hoy_ar();
+         WHERE alumno_id = p_alumno_id AND fecha = public.hoy_ar();
     END IF;
     RETURN v_row;
 END $$;
@@ -845,6 +858,21 @@ BEGIN
 END $$;
 
 
+-- 14.10 Registrar invitación a retomar (después de enviarla por WhatsApp)
+CREATE FUNCTION public.registrar_invitacion(p_alumno_id UUID, p_motivo TEXT)
+RETURNS UUID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_id UUID;
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+    INSERT INTO public.invitaciones_retomar (alumno_id, motivo)
+    VALUES (p_alumno_id, p_motivo)
+    RETURNING id INTO v_id;
+    RETURN v_id;
+END $$;
+
+
+
 -- ---------------------------------------------------------------------
 -- 15. VISTAS PARA EL FRONT
 --     security_invoker = true → la vista respeta el RLS de quien consulta:
@@ -873,7 +901,13 @@ SELECT
         WHEN c.fecha_vencimiento <  public.hoy_ar()          THEN 'Vencido'
         WHEN c.fecha_vencimiento <= public.hoy_ar() + 15     THEN 'Por vencer'
         ELSE 'Vigente'
-    END                                        AS estado_certificado
+    END                                        AS estado_certificado,
+    CASE
+        WHEN a.fecha_vencimiento IS NULL                     THEN 'En clase de prueba'
+        WHEN a.fecha_vencimiento <  public.hoy_ar() - 30     THEN 'Inactivo'
+        ELSE 'Activo'
+    END                                        AS estado_alumno,
+    a.fecha_clase_prueba
 FROM public.usuarios u
 JOIN public.alumnos a        ON a.usuario_id = u.id
 LEFT JOIN public.planes p    ON p.id = a.plan_id
@@ -883,20 +917,20 @@ LEFT JOIN LATERAL (
 ) c ON TRUE
 WHERE u.activo;
 
--- Alertas in-app: membresías que vencen en ≤ 3 días o ya vencidas,
--- y certificados por vencer/vencidos. El alumno ve solo las suyas;
--- recepción y SuperAdmin ven todas (con teléfono para contactar por WhatsApp).
+-- Alertas de vencimiento: solo alumnos activos (los inactivos pasan a invitaciones)
 CREATE VIEW public.v_alertas WITH (security_invoker = true) AS
 SELECT alumno_id, dni, nombre, apellido, telefono, 'Membresía'::text AS tipo,
        estado_membresia AS estado, fecha_vencimiento AS vence, dias_restantes
   FROM public.v_membresias
- WHERE estado_membresia IN ('Por vencer', 'Vencida')
+ WHERE estado_alumno = 'Activo'
+   AND estado_membresia IN ('Por vencer', 'Vencida')
 UNION ALL
 SELECT alumno_id, dni, nombre, apellido, telefono, 'Certificado',
        estado_certificado, certificado_vencimiento,
        certificado_vencimiento - public.hoy_ar()
   FROM public.v_membresias
- WHERE estado_certificado IN ('Por vencer', 'Vencido', 'Sin certificado');
+ WHERE estado_alumno <> 'Inactivo'
+   AND estado_certificado IN ('Por vencer', 'Vencido', 'Sin certificado');
 
 -- Rutina activa completa (para el alumno y para el panel del coach)
 CREATE VIEW public.v_rutina_alumno WITH (security_invoker = true) AS
@@ -909,6 +943,32 @@ SELECT r.id AS rutina_id, r.alumno_id, r.coach_id, r.nombre AS rutina, r.objetiv
   LEFT JOIN public.rutina_items i ON i.rutina_dia_id = d.id
   LEFT JOIN public.ejercicios e   ON e.id = i.ejercicio_id
  WHERE r.activa;
+
+-- Pendientes de invitar:
+--   · en clase de prueba hace 7 días o más, sin pagar y sin invitación previa
+--   · inactivos que no fueron invitados desde que pasaron a inactivos
+CREATE VIEW public.v_invitaciones_pendientes WITH (security_invoker = true) AS
+SELECT m.alumno_id, m.dni, m.nombre, m.apellido, m.telefono,
+       CASE m.estado_alumno WHEN 'En clase de prueba' THEN 'Clase de prueba' ELSE 'Inactivo' END AS motivo,
+       CASE m.estado_alumno WHEN 'En clase de prueba' THEN m.fecha_clase_prueba
+                            ELSE m.fecha_vencimiento END                                     AS desde,
+       public.hoy_ar() - CASE m.estado_alumno WHEN 'En clase de prueba' THEN m.fecha_clase_prueba
+                                              ELSE m.fecha_vencimiento END                   AS dias,
+       i.ultima                                                                              AS ultima_invitacion
+  FROM public.v_membresias m
+  LEFT JOIN LATERAL (
+      SELECT max(ir.enviada_at) AS ultima FROM public.invitaciones_retomar ir
+       WHERE ir.alumno_id = m.alumno_id
+  ) i ON TRUE
+ WHERE public.mi_rol() IN ('Recepcionista', 'SuperAdmin')
+   AND (
+        (m.estado_alumno = 'En clase de prueba'
+            AND m.fecha_clase_prueba <= public.hoy_ar() - 7
+            AND i.ultima IS NULL)
+     OR (m.estado_alumno = 'Inactivo'
+            AND (i.ultima IS NULL
+                 OR (i.ultima AT TIME ZONE 'America/Argentina/Buenos_Aires')::date < m.fecha_vencimiento + 30))
+   );
 
 -- Dashboard de ingresos (CU12) — solo devuelve filas al SuperAdmin (RLS de ingresos)
 CREATE VIEW public.v_ingresos_diarios WITH (security_invoker = true) AS
@@ -942,6 +1002,7 @@ ALTER TABLE public.venta_items          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.espacios_alquiler    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ingresos             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.asistencias          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invitaciones_retomar ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ejercicios           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rutinas              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rutina_dias          ENABLE ROW LEVEL SECURITY;
@@ -1012,7 +1073,11 @@ CREATE POLICY espacios_select ON public.espacios_alquiler FOR SELECT TO authenti
 CREATE POLICY espacios_write ON public.espacios_alquiler FOR ALL TO authenticated
     USING (public.mi_rol() = 'SuperAdmin') WITH CHECK (public.mi_rol() = 'SuperAdmin');
 
--- asistencias: el alumno ve las suyas; staff ve todas. Alta por registrar_checkin().
+-- invitaciones a retomar: solo Recepción y SuperAdmin. Alta por registrar_invitacion().
+CREATE POLICY invitaciones_select ON public.invitaciones_retomar FOR SELECT TO authenticated
+    USING (public.mi_rol() IN ('Recepcionista', 'SuperAdmin'));
+
+-- asistencias: el alumno ve las suyas; staff ve todas. Alta SOLO por registrar_checkin() (recepción).
 CREATE POLICY asistencias_select ON public.asistencias FOR SELECT TO authenticated
     USING (alumno_id = auth.uid() OR public.es_staff());
 
@@ -1054,12 +1119,13 @@ CREATE POLICY observaciones_coach ON public.observaciones_alumno FOR ALL TO auth
 -- ---------------------------------------------------------------------
 -- Nadie modifica fecha_vencimiento a mano: solo las funciones de cobro.
 REVOKE UPDATE ON public.alumnos FROM anon, authenticated;
-GRANT  UPDATE (plan_id, fecha_nacimiento, contacto_emergencia) ON public.alumnos TO authenticated;
+GRANT  UPDATE (plan_id, fecha_nacimiento, contacto_emergencia, fecha_clase_prueba) ON public.alumnos TO authenticated;
 
 -- Nadie cambia el estado de un comprobante ni el contenido de un turno a mano
 REVOKE UPDATE, DELETE ON public.comprobantes_pago, public.turnos_caja,
                          public.ingresos, public.ventas, public.venta_items,
                          public.asistencias FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.invitaciones_retomar FROM anon, authenticated;
 
 -- El usuario anónimo (sin login) no accede a nada
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
@@ -1070,6 +1136,20 @@ REVOKE EXECUTE ON FUNCTION public._extender_membresia(UUID), public._turno_abier
                            public.fn_nuevo_usuario_auth()
     FROM PUBLIC, anon, authenticated;
 
+-- Funciones de trigger: fuera de la API (los triggers se disparan igual)
+REVOKE EXECUTE ON FUNCTION public.fn_tocar_rutina(), public.fn_validar_roles_coach_alumno()
+    FROM PUBLIC, anon, authenticated;
+DO $$
+BEGIN
+    IF to_regprocedure('public.fn_validar_progresion()') IS NOT NULL THEN
+        REVOKE EXECUTE ON FUNCTION public.fn_validar_progresion() FROM PUBLIC, anon, authenticated;
+    END IF;
+END $$;
+
+-- Helpers de RLS: solo usuarios logueados (las políticas los necesitan)
+REVOKE EXECUTE ON FUNCTION public.mi_rol(), public.es_staff() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.mi_rol(), public.es_staff() TO authenticated, service_role;
+
 -- RPC públicas: solo usuarios logueados
 REVOKE EXECUTE ON FUNCTION
     public.registrar_checkin(UUID), public.aprobar_comprobante(UUID, NUMERIC),
@@ -1077,7 +1157,7 @@ REVOKE EXECUTE ON FUNCTION
     public.registrar_venta(JSONB, public.medio_pago),
     public.registrar_cobro_alquiler(UUID, NUMERIC, public.medio_pago, TEXT),
     public.abrir_turno(NUMERIC), public.cerrar_turno(NUMERIC, TEXT),
-    public.justificar_cierre(UUID, TEXT),
+    public.justificar_cierre(UUID, TEXT), public.registrar_invitacion(UUID, TEXT),
     public.guardar_rutina(UUID, TEXT, TEXT, JSONB, UUID)
 FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION
@@ -1086,7 +1166,7 @@ GRANT EXECUTE ON FUNCTION
     public.registrar_venta(JSONB, public.medio_pago),
     public.registrar_cobro_alquiler(UUID, NUMERIC, public.medio_pago, TEXT),
     public.abrir_turno(NUMERIC), public.cerrar_turno(NUMERIC, TEXT),
-    public.justificar_cierre(UUID, TEXT),
+    public.justificar_cierre(UUID, TEXT), public.registrar_invitacion(UUID, TEXT),
     public.guardar_rutina(UUID, TEXT, TEXT, JSONB, UUID)
 TO authenticated;
 
@@ -1136,6 +1216,8 @@ CREATE POLICY "certificados_select" ON storage.objects FOR SELECT TO authenticat
 --     │ Alumno        │ 40111001 │ Lucía – al día, con rutina y apto    │
 --     │ Alumno        │ 41222002 │ Tomás – vence en 2 días, comp. pend. │
 --     │ Alumno        │ 39333003 │ Camila – vencida hace 5 días         │
+--     │ Alumno        │ 43444004 │ Valentina – clase de prueba, no pagó │
+--     │ Alumno        │ 38555005 │ Diego – inactivo (venció hace 40 d.) │
 --     └───────────────┴──────────┴──────────────────────────────────────┘
 -- =====================================================================
 
@@ -1183,7 +1265,15 @@ BEGIN
     PERFORM public._crear_usuario_mock('20000000-0000-0000-0000-000000000001', '40111001', 'Lucía',  'Fernández', 'Alumno', '3815552001', 'a0000000-0000-0000-0000-000000000002');
     PERFORM public._crear_usuario_mock('20000000-0000-0000-0000-000000000002', '41222002', 'Tomás',  'Ruiz',      'Alumno', '3815552002', 'a0000000-0000-0000-0000-000000000001');
     PERFORM public._crear_usuario_mock('20000000-0000-0000-0000-000000000003', '39333003', 'Camila', 'Herrera',   'Alumno', '3815552003', 'a0000000-0000-0000-0000-000000000003');
+    PERFORM public._crear_usuario_mock('20000000-0000-0000-0000-000000000004', '43444004', 'Valentina', 'Sosa',   'Alumno', '3815552004');
+    PERFORM public._crear_usuario_mock('20000000-0000-0000-0000-000000000005', '38555005', 'Diego',  'Luna',      'Alumno', '3815552005', 'a0000000-0000-0000-0000-000000000001');
 END $$;
+
+-- Valentina hizo la clase de prueba hace 8 días; Diego dejó de venir (venció hace 40 días)
+UPDATE public.alumnos SET fecha_clase_prueba = public.hoy_ar() - 8
+ WHERE usuario_id = '20000000-0000-0000-0000-000000000004';
+UPDATE public.alumnos SET fecha_clase_prueba = public.hoy_ar() - 100, fecha_vencimiento = public.hoy_ar() - 40
+ WHERE usuario_id = '20000000-0000-0000-0000-000000000005';
 
 -- Vencimientos para probar los tres estados y las alertas
 UPDATE public.alumnos SET fecha_vencimiento = public.hoy_ar() + 15, fecha_nacimiento = '2000-07-03'
@@ -1313,12 +1403,12 @@ UPDATE public.turnos_caja
 
 -- Asistencias de ayer
 INSERT INTO public.asistencias (alumno_id, registrado_por, fecha_hora, fecha) VALUES
-  ('20000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', now() - interval '1 day 2 hours', public.hoy_ar() - 1),
+  ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000002', now() - interval '1 day 2 hours', public.hoy_ar() - 1),
   ('20000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002', now() - interval '1 day 1 hour',  public.hoy_ar() - 1);
 
 
 -- ---------------------------------------------------------------------
 -- 20. VERIFICACIÓN RÁPIDA (el SQL Editor corre como admin y ve todo)
 -- ---------------------------------------------------------------------
-SELECT nombre, apellido, plan, dias_restantes, estado_membresia, estado_certificado
-  FROM public.v_membresias ORDER BY dias_restantes;
+SELECT nombre, apellido, estado_alumno, plan, dias_restantes, estado_membresia, estado_certificado
+  FROM public.v_membresias ORDER BY estado_alumno, dias_restantes;

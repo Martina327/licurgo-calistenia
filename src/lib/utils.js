@@ -46,7 +46,7 @@ export const linkWhatsApp = (telefono, texto = '') => {
 // Esto los traduce a un mensaje para mostrar en pantalla.
 const MENSAJES = {
   PERMISO_DENEGADO: 'No tenés permiso para realizar esta acción.',
-  MEMBRESIA_VENCIDA: 'Tu membresía está vencida. Acercate a recepción o subí tu comprobante.',
+  ALUMNO_REQUERIDO: 'Elegí un alumno.',
   SIN_TURNO_ABIERTO: 'Abrí un turno de caja para cobrar en efectivo.',
   TURNO_YA_ABIERTO: 'Ya tenés un turno de caja abierto.',
   STOCK_INSUFICIENTE: 'No hay stock suficiente de uno de los productos.',
@@ -64,4 +64,18 @@ export const mensajeError = (error) => {
   if (!error) return ''
   const codigo = String(error.message ?? '').split(':')[0].trim()
   return MENSAJES[codigo] ?? error.message ?? 'Ocurrió un error inesperado.'
+}
+
+// Mensajes armados para WhatsApp: recepción los abre con un toque y los envía a mano (sin costo).
+export const MENSAJES_WHATSAPP = {
+  vencimiento: (nombre, dias) =>
+    dias < 0
+      ? `Hola ${nombre}, te escribimos de Licurgo Calistenia. Tu cuota venció hace ${Math.abs(dias)} día(s). Podés abonarla en recepción o subir el comprobante de transferencia en la app.`
+      : `Hola ${nombre}, te escribimos de Licurgo Calistenia. Tu cuota vence ${dias === 0 ? 'hoy' : `en ${dias} día(s)`}. Podés abonarla en recepción o subir el comprobante de transferencia en la app.`,
+  certificado: (nombre) =>
+    `Hola ${nombre}, te escribimos de Licurgo Calistenia. Necesitamos que cargues tu certificado de aptitud física actualizado.`,
+  'Clase de prueba': (nombre) =>
+    `Hola ${nombre}, ¿cómo estás? Hace unos días viniste a tu clase de prueba en Licurgo Calistenia. ¡Nos encantaría verte de nuevo! Si querés empezar, pasá por recepción y te dejamos todo listo.`,
+  Inactivo: (nombre) =>
+    `Hola ${nombre}, ¿cómo estás? Hace un tiempo que no te vemos por Licurgo Calistenia. ¡Te esperamos para retomar los entrenamientos! Cualquier consulta, escribinos.`,
 }
