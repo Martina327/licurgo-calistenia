@@ -6,10 +6,14 @@ const MENU = {
   SuperAdmin: [
     { to: '/admin', texto: 'Ingresos' },
     { to: '/recepcion', texto: 'Mostrador' },
-    { to: '/coach', texto: 'Rutinas' },
+    { to: '/coach', texto: 'Rutinas', end: true },
+    { to: '/coach/ejercicios', texto: 'Ejercicios' },
   ],
   Recepcionista: [{ to: '/recepcion', texto: 'Mostrador' }],
-  Coach: [{ to: '/coach', texto: 'Alumnos y rutinas' }],
+  Coach: [
+    { to: '/coach', texto: 'Alumnos y rutinas', end: true },
+    { to: '/coach/ejercicios', texto: 'Ejercicios' },
+  ],
   Alumno: [{ to: '/alumno', texto: 'Mi membresía' }],
 }
 
@@ -27,6 +31,7 @@ export default function Layout() {
               <NavLink
                 key={i.to}
                 to={i.to}
+                end={i.end}
                 className={({ isActive }) =>
                   `whitespace-nowrap rounded-md px-3 py-1.5 text-sm ${
                     isActive ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'

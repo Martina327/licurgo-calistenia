@@ -53,6 +53,7 @@ const MENSAJES = {
   COMPROBANTE_YA_REVISADO: 'Ese comprobante ya fue revisado.',
   SIN_PLAN: 'El alumno no tiene un plan asignado.',
   MOTIVO_REQUERIDO: 'Indicá el motivo del rechazo.',
+  PROGRESION_CICLICA: 'Esa progresión formaría un círculo: el ejercicio elegido ya depende de este.',
 }
 export const mensajeError = (error) => {
   if (!error) return ''
