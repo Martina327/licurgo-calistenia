@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import DashboardIngresos from './pages/superadmin/DashboardIngresos'
 import Mostrador from './pages/recepcion/Mostrador'
 import PanelCoach from './pages/coach/PanelCoach'
+import CatalogoEjercicios from './pages/coach/CatalogoEjercicios'
 import InicioAlumno from './pages/alumno/InicioAlumno'
 
 // "/" manda a cada uno a su pantalla de inicio según el rol (CU02)
@@ -33,6 +34,7 @@ export default function App() {
           </Route>
           <Route element={<RutaProtegida roles={['Coach', 'SuperAdmin']} />}>
             <Route path="/coach" element={<PanelCoach />} />
+            <Route path="/coach/ejercicios" element={<CatalogoEjercicios />} />
           </Route>
           <Route element={<RutaProtegida roles={['Alumno']} />}>
             <Route path="/alumno" element={<InicioAlumno />} />

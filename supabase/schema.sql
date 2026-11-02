@@ -49,7 +49,8 @@ DROP FUNCTION IF EXISTS public.fn_set_fecha_actualizacion, public.fn_validar_rol
     public.fn_tocar_rutina, public.registrar_checkin, public.aprobar_comprobante,
     public.rechazar_comprobante, public.registrar_pago_efectivo, public.registrar_venta,
     public.registrar_cobro_alquiler, public.abrir_turno, public.cerrar_turno,
-    public.justificar_cierre, public._crear_usuario_mock CASCADE;
+    public.justificar_cierre, public._crear_usuario_mock,
+    public.fn_validar_progresion CASCADE;
 
 -- Usuarios mock de Supabase Auth (por DNI)
 DELETE FROM auth.users
@@ -402,6 +403,32 @@ CREATE TRIGGER trg_rutinas_roles BEFORE INSERT OR UPDATE OF coach_id ON public.r
     FOR EACH ROW EXECUTE FUNCTION public.fn_validar_roles_coach_alumno();
 CREATE TRIGGER trg_observaciones_roles BEFORE INSERT OR UPDATE OF coach_id ON public.observaciones_alumno
     FOR EACH ROW EXECUTE FUNCTION public.fn_validar_roles_coach_alumno();
+
+-- Progresiones de ejercicios sin ciclos (A → B → C → A)  [B1]
+CREATE FUNCTION public.fn_validar_progresion() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN
+    IF NEW.prerrequisito_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+    -- Recorre la cadena de prerrequisitos hacia atrás desde el nuevo prerrequisito
+    IF EXISTS (
+        WITH RECURSIVE cadena(id) AS (
+            SELECT NEW.prerrequisito_id
+            UNION
+            SELECT e.prerrequisito_id
+              FROM public.ejercicios e JOIN cadena c ON e.id = c.id
+             WHERE e.prerrequisito_id IS NOT NULL
+        )
+        SELECT 1 FROM cadena WHERE id = NEW.id
+    ) THEN
+        RAISE EXCEPTION 'PROGRESION_CICLICA: el prerrequisito elegido depende de este ejercicio';
+    END IF;
+    RETURN NEW;
+END $$;
+
+CREATE TRIGGER trg_ejercicios_progresion BEFORE INSERT OR UPDATE OF prerrequisito_id ON public.ejercicios
+    FOR EACH ROW EXECUTE FUNCTION public.fn_validar_progresion();
 
 -- Cualquier cambio en la rutina, sus días o sus ítems actualiza fecha_actualizacion
 CREATE FUNCTION public.fn_tocar_rutina() RETURNS trigger
