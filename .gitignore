@@ -147,3 +147,12 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# --- Proyecto Licurgo (Vite + React) ---
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+.vercel
+.DS_Store
