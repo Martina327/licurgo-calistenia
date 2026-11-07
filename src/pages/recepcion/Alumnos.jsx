@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatearFecha, mensajeError } from '../../lib/utils'
+import { esDniValido, formatearFecha, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 
 // Gestión de alumnos (CU01 · A1). Recepción y SuperAdmin.
-//   Paso 2: listado con el estado del alumno y de la cuota, buscador y filtro.
-//   Próximos pasos: alta rápida de clase de prueba, edición y baja lógica.
+//   · Listado con el estado del alumno y de la cuota, buscador y filtro.
+//   · Alta rápida de clase de prueba: nombre, apellido, DNI y celular.
+//     El alumno entra con su DNI como usuario y clave (cambio obligatorio al primer ingreso).
+//   Próximos pasos: edición y baja lógica.
 const FILTROS = ['Todos', 'En clase de prueba', 'Activo', 'Inactivo']
 
 export default function Alumnos() {
@@ -16,18 +18,28 @@ export default function Alumnos() {
   const [error, setError] = useState('')
   const [busqueda, setBusqueda] = useState('')
   const [filtro, setFiltro] = useState('Todos')
+  const [mostrarAlta, setMostrarAlta] = useState(false)
+  const [avisoOk, setAvisoOk] = useState('')
 
-  useEffect(() => {
-    supabase
+  const cargar = useCallback(async () => {
+    const { data, error } = await supabase
       .from('v_membresias')
       .select('alumno_id, dni, nombre, apellido, telefono, estado_alumno, estado_membresia, fecha_vencimiento, dias_restantes, fecha_clase_prueba')
       .order('apellido')
-      .then(({ data, error }) => {
-        if (error) setError(mensajeError(error))
-        setAlumnos(data ?? [])
-        setCargando(false)
-      })
+    if (error) setError(mensajeError(error))
+    setAlumnos(data ?? [])
+    setCargando(false)
   }, [])
+
+  useEffect(() => {
+    cargar()
+  }, [cargar])
+
+  const alDarDeAlta = async (alumno) => {
+    setMostrarAlta(false)
+    setAvisoOk(`${alumno.nombre} ${alumno.apellido} quedó registrado en clase de prueba. Entra a la app con su DNI como usuario y como clave.`)
+    await cargar()
+  }
 
   // Cantidad por estado, para mostrar en cada filtro
   const conteo = useMemo(() => {
@@ -49,11 +61,24 @@ export default function Alumnos() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">Alumnos</h1>
-        <p className="text-sm text-neutral-400">Estado de cada alumno y de su cuota.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Alumnos</h1>
+          <p className="text-sm text-neutral-400">Estado de cada alumno y de su cuota.</p>
+        </div>
+        {!mostrarAlta && (
+          <button
+            onClick={() => { setMostrarAlta(true); setAvisoOk('') }}
+            className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950"
+          >
+            + Clase de prueba
+          </button>
+        )}
       </div>
 
+      {mostrarAlta && <AltaClasePrueba alCancelar={() => setMostrarAlta(false)} alGuardar={alDarDeAlta} />}
+
+      <Aviso tipo="ok" texto={avisoOk} />
       <Aviso tipo="error" texto={error} />
 
       <input
@@ -112,5 +137,81 @@ export default function Alumnos() {
         </div>
       )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------
+// Alta rápida de clase de prueba (CU01)
+// ---------------------------------------------------------------
+const VACIO = { nombre: '', apellido: '', dni: '', telefono: '' }
+
+function AltaClasePrueba({ alCancelar, alGuardar }) {
+  const [datos, setDatos] = useState(VACIO)
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  const cambiar = (campo) => (e) => setDatos((d) => ({ ...d, [campo]: e.target.value }))
+
+  const guardar = async (e) => {
+    e.preventDefault()
+    setError('')
+    const d = {
+      nombre: datos.nombre.trim(),
+      apellido: datos.apellido.trim(),
+      dni: datos.dni.trim(),
+      telefono: datos.telefono.replace(/\D/g, ''),
+    }
+    if (!d.nombre || !d.apellido) return setError('Completá nombre y apellido.')
+    if (!esDniValido(d.dni)) return setError('El DNI tiene que tener 7 u 8 números, sin puntos.')
+    if (d.telefono.length < 10) return setError('El celular tiene que tener código de área y número, sin el 0 ni el 15 (ej.: 3815551234).')
+
+    setEnviando(true)
+    const { error } = await supabase.rpc('alta_clase_prueba', {
+      p_dni: d.dni,
+      p_nombre: d.nombre,
+      p_apellido: d.apellido,
+      p_telefono: d.telefono,
+    })
+    setEnviando(false)
+    if (error) return setError(mensajeError(error))
+    alGuardar(d)
+  }
+
+  const campo = 'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-neutral-400'
+
+  return (
+    <form onSubmit={guardar} className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+      <div>
+        <h2 className="font-semibold">Nueva clase de prueba</h2>
+        <p className="text-sm text-neutral-400">El resto de los datos se completa cuando paga la primera cuota.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1 text-sm">
+          <span className="text-neutral-400">Nombre</span>
+          <input value={datos.nombre} onChange={cambiar('nombre')} className={campo} autoFocus />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="text-neutral-400">Apellido</span>
+          <input value={datos.apellido} onChange={cambiar('apellido')} className={campo} />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="text-neutral-400">DNI</span>
+          <input value={datos.dni} onChange={cambiar('dni')} inputMode="numeric" placeholder="Sin puntos" className={campo} />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="text-neutral-400">Celular</span>
+          <input value={datos.telefono} onChange={cambiar('telefono')} inputMode="tel" placeholder="3815551234" className={campo} />
+        </label>
+      </div>
+      <Aviso tipo="error" texto={error} />
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={alCancelar} className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800">
+          Cancelar
+        </button>
+        <button type="submit" disabled={enviando} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
+          {enviando ? 'Guardando…' : 'Registrar'}
+        </button>
+      </div>
+    </form>
   )
 }
