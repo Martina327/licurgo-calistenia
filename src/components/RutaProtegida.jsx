@@ -10,6 +10,8 @@ export default function RutaProtegida({ roles }) {
 
   if (cargando) return <Cargando />
   if (!perfil) return <Navigate to="/login" replace />
+  // Primer ingreso: no puede usar la app hasta cambiar la clave inicial (su DNI)
+  if (perfil.debe_cambiar_clave) return <Navigate to="/cambiar-clave" replace />
   if (roles && !roles.includes(perfil.rol)) {
     return <Navigate to={INICIO_POR_ROL[perfil.rol] ?? '/login'} replace />
   }

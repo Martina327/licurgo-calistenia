@@ -5,6 +5,7 @@ import RutaProtegida from './components/RutaProtegida'
 import Layout from './components/Layout'
 import Cargando from './components/Cargando'
 import Login from './pages/Login'
+import CambiarClave from './pages/CambiarClave'
 import DashboardIngresos from './pages/superadmin/DashboardIngresos'
 import Mostrador from './pages/recepcion/Mostrador'
 import Alumnos from './pages/recepcion/Alumnos'
@@ -25,6 +26,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/cambiar-clave" element={<CambiarClave />} />
       <Route path="/" element={<Inicio />} />
 
       <Route element={<RutaProtegida />}>
