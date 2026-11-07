@@ -63,7 +63,9 @@ const MENSAJES = {
   DATOS_REQUERIDOS: 'Completá nombre y apellido.',
   CELULAR_INVALIDO: 'Revisá el celular: código de área y número, sin el 0 ni el 15.',
   DNI_EXISTENTE: 'Ya hay un alumno o integrante del staff con ese DNI.',
-  DNI_DADO_DE_BAJA: 'Ese DNI pertenece a alguien dado de baja. Hay que reactivarlo en lugar de crearlo de nuevo.',
+  DNI_DADO_DE_BAJA: 'Ese DNI pertenece a alguien dado de baja. Buscalo en "Dados de baja" y reactivalo.',
+  EMAIL_INVALIDO: 'Revisá el email.',
+  FECHA_NACIMIENTO_INVALIDA: 'Revisá la fecha de nacimiento.',
 }
 export const mensajeError = (error) => {
   if (!error) return ''
