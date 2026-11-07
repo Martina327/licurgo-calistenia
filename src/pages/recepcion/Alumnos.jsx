@@ -7,9 +7,11 @@ import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 
 // Gestión de alumnos (CU01 · A1). Recepción y SuperAdmin.
 //   · Listado con el estado del alumno y de la cuota, buscador y filtro.
-//   · Alta rápida de clase de prueba: nombre, apellido, DNI y celular.
+//   · Alta rápida de clase de prueba: nombre, apellido, DNI, celular y email.
 //     El alumno entra con su DNI como usuario y clave (cambio obligatorio al primer ingreso).
 //   · Edición de datos y baja lógica (editar_alumno, dar_baja_alumno).
+//     Ficha completa (nacimiento, domicilio, contacto de emergencia): obligatoria
+//     para pagar la primera cuota; la base lo controla en _extender_membresia.
 //   · Dados de baja: listado aparte con opción de reactivar (reactivar_alumno).
 const FILTROS = ['Todos', 'En clase de prueba', 'Activo', 'Inactivo', 'Dados de baja']
 
@@ -28,7 +30,7 @@ export default function Alumnos() {
     const [m, b] = await Promise.all([
       supabase
         .from('v_membresias')
-        .select('alumno_id, dni, nombre, apellido, telefono, estado_alumno, estado_membresia, fecha_vencimiento, dias_restantes, fecha_clase_prueba')
+        .select('alumno_id, dni, nombre, apellido, telefono, estado_alumno, estado_membresia, fecha_vencimiento, dias_restantes, fecha_clase_prueba, datos_faltantes')
         .order('apellido'),
       supabase.from('v_alumnos_baja').select('*').order('apellido'),
     ])
@@ -167,7 +169,12 @@ export default function Alumnos() {
             <tbody>
               {visibles.map((a) => (
                 <tr key={a.alumno_id} className="border-t border-neutral-800">
-                  <td className="px-3 py-2 font-medium">{a.apellido}, {a.nombre}</td>
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{a.apellido}, {a.nombre}</div>
+                    {a.datos_faltantes?.length > 0 && (
+                      <div className="text-xs text-amber-400">Falta: {a.datos_faltantes.join(', ')}</div>
+                    )}
+                  </td>
                   <td className="px-3 py-2">{a.dni}</td>
                   <td className="px-3 py-2">{a.telefono ?? '—'}</td>
                   <td className="px-3 py-2"><EtiquetaAlumno estado={a.estado_alumno} /></td>
@@ -195,7 +202,8 @@ export default function Alumnos() {
 // ---------------------------------------------------------------
 // Alta rápida de clase de prueba (CU01)
 // ---------------------------------------------------------------
-const VACIO = { nombre: '', apellido: '', dni: '', telefono: '' }
+const VACIO = { nombre: '', apellido: '', dni: '', telefono: '', email: '' }
+const esEmailValido = (email) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
 
 function AltaClasePrueba({ alCancelar, alGuardar }) {
   const [datos, setDatos] = useState(VACIO)
@@ -212,10 +220,12 @@ function AltaClasePrueba({ alCancelar, alGuardar }) {
       apellido: datos.apellido.trim(),
       dni: datos.dni.replace(/[.\s]/g, ''), // se aceptan puntos y espacios: se sacan
       telefono: datos.telefono.replace(/\D/g, ''),
+      email: datos.email.trim().toLowerCase(),
     }
     if (!d.nombre || !d.apellido) return setError('Completá nombre y apellido.')
     if (!esDniValido(d.dni)) return setError('El DNI tiene que tener 7 u 8 números.')
     if (d.telefono.length < 10) return setError('El celular tiene que tener código de área y número, sin el 0 ni el 15 (ej.: 3815551234).')
+    if (!esEmailValido(d.email)) return setError('Ingresá un email válido.')
 
     setEnviando(true)
     const { error } = await supabase.rpc('alta_clase_prueba', {
@@ -223,6 +233,7 @@ function AltaClasePrueba({ alCancelar, alGuardar }) {
       p_nombre: d.nombre,
       p_apellido: d.apellido,
       p_telefono: d.telefono,
+      p_email: d.email,
     })
     setEnviando(false)
     if (error) return setError(mensajeError(error))
@@ -235,7 +246,7 @@ function AltaClasePrueba({ alCancelar, alGuardar }) {
     <form onSubmit={guardar} className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
       <div>
         <h2 className="font-semibold">Nueva clase de prueba</h2>
-        <p className="text-sm text-neutral-400">El resto de los datos se completa cuando paga la primera cuota.</p>
+        <p className="text-sm text-neutral-400">Todos los datos son obligatorios: sirven para volver a contactarla si no regresa. El resto de la ficha se completa al pagar la primera cuota.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">
@@ -253,6 +264,10 @@ function AltaClasePrueba({ alCancelar, alGuardar }) {
         <label className="space-y-1 text-sm">
           <span className="text-neutral-400">Celular</span>
           <input value={datos.telefono} onChange={cambiar('telefono')} inputMode="tel" placeholder="3815551234" className={campo} />
+        </label>
+        <label className="space-y-1 text-sm sm:col-span-2">
+          <span className="text-neutral-400">Email</span>
+          <input type="email" value={datos.email} onChange={cambiar('email')} placeholder="nombre@ejemplo.com" className={campo} />
         </label>
       </div>
       <Aviso tipo="error" texto={error} />
@@ -277,11 +292,14 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
   const [enviando, setEnviando] = useState(false)
   const [confirmarBaja, setConfirmarBaja] = useState(false)
 
-  // v_membresias no trae email, nacimiento ni contacto de emergencia: se piden aparte
+  // Si ya pagó alguna vez, la ficha completa es obligatoria; en clase de prueba se puede ir completando
+  const fichaObligatoria = alumno.estado_alumno !== 'En clase de prueba'
+
+  // v_membresias no trae nacimiento ni contacto de emergencia: se piden aparte
   useEffect(() => {
     Promise.all([
       supabase.from('usuarios').select('email_contacto').eq('id', alumno.alumno_id).single(),
-      supabase.from('alumnos').select('fecha_nacimiento, contacto_emergencia').eq('usuario_id', alumno.alumno_id).single(),
+      supabase.from('alumnos').select('fecha_nacimiento, domicilio, contacto_emergencia').eq('usuario_id', alumno.alumno_id).single(),
     ]).then(([u, a]) => {
       if (u.error || a.error) setError(mensajeError(u.error ?? a.error))
       setDatos({
@@ -291,6 +309,7 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
         telefono: alumno.telefono ?? '',
         email_contacto: u.data?.email_contacto ?? '',
         fecha_nacimiento: a.data?.fecha_nacimiento ?? '',
+        domicilio: a.data?.domicilio ?? '',
         contacto_emergencia: a.data?.contacto_emergencia ?? '',
       })
     })
@@ -308,6 +327,10 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
     if (!datos.nombre.trim() || !datos.apellido.trim()) return setError('Completá nombre y apellido.')
     if (!esDniValido(dni)) return setError('El DNI tiene que tener 7 u 8 números.')
     if (telefono.length < 10) return setError('El celular tiene que tener código de área y número, sin el 0 ni el 15 (ej.: 3815551234).')
+    if (!esEmailValido(datos.email_contacto.trim())) return setError('Ingresá un email válido.')
+    if (fichaObligatoria && (!datos.fecha_nacimiento || !datos.domicilio.trim() || !datos.contacto_emergencia.trim())) {
+      return setError('Completá fecha de nacimiento, domicilio y contacto de emergencia.')
+    }
 
     setEnviando(true)
     const { error } = await supabase.rpc('editar_alumno', {
@@ -316,8 +339,9 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
       p_nombre: datos.nombre,
       p_apellido: datos.apellido,
       p_telefono: telefono,
-      p_email_contacto: datos.email_contacto || null,
+      p_email_contacto: datos.email_contacto.trim(),
       p_fecha_nacimiento: datos.fecha_nacimiento || null,
+      p_domicilio: datos.domicilio || null,
       p_contacto_emergencia: datos.contacto_emergencia || null,
     })
     setEnviando(false)
@@ -368,17 +392,31 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
           <input value={datos.telefono} onChange={cambiar('telefono')} inputMode="tel" className={campo} />
         </label>
         <label className="space-y-1 text-sm">
-          <span className="text-neutral-400">Email <span className="text-neutral-500">(opcional)</span></span>
+          <span className="text-neutral-400">Email</span>
           <input type="email" value={datos.email_contacto} onChange={cambiar('email_contacto')} className={campo} />
         </label>
-        <label className="space-y-1 text-sm">
-          <span className="text-neutral-400">Fecha de nacimiento <span className="text-neutral-500">(opcional)</span></span>
-          <input type="date" value={datos.fecha_nacimiento} onChange={cambiar('fecha_nacimiento')} className={campo} />
-        </label>
-        <label className="space-y-1 text-sm sm:col-span-2">
-          <span className="text-neutral-400">Contacto de emergencia <span className="text-neutral-500">(opcional: nombre y teléfono)</span></span>
-          <input value={datos.contacto_emergencia} onChange={cambiar('contacto_emergencia')} className={campo} />
-        </label>
+      </div>
+
+      <div className="space-y-3 border-t border-neutral-800 pt-3">
+        <p className="text-sm text-neutral-400">
+          {fichaObligatoria
+            ? 'Ficha del alumno: todos los datos son obligatorios.'
+            : 'Ficha del alumno: obligatoria para pagar la primera cuota. Se puede ir completando.'}
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className="text-neutral-400">Fecha de nacimiento</span>
+            <input type="date" value={datos.fecha_nacimiento} onChange={cambiar('fecha_nacimiento')} className={campo} />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-neutral-400">Domicilio</span>
+            <input value={datos.domicilio} onChange={cambiar('domicilio')} placeholder="Calle, número, barrio" className={campo} />
+          </label>
+          <label className="space-y-1 text-sm sm:col-span-2">
+            <span className="text-neutral-400">Contacto de emergencia <span className="text-neutral-500">(nombre y teléfono)</span></span>
+            <input value={datos.contacto_emergencia} onChange={cambiar('contacto_emergencia')} placeholder="Ej.: Ana Pérez (madre) 3815551234" className={campo} />
+          </label>
+        </div>
       </div>
 
       <Aviso tipo="error" texto={error} />

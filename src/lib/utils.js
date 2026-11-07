@@ -65,6 +65,8 @@ const MENSAJES = {
   DNI_EXISTENTE: 'Ya hay un alumno o integrante del staff con ese DNI.',
   DNI_DADO_DE_BAJA: 'Ese DNI pertenece a alguien dado de baja. Buscalo en "Dados de baja" y reactivalo.',
   EMAIL_INVALIDO: 'Revisá el email.',
+  EMAIL_REQUERIDO: 'El email es obligatorio.',
+  FICHA_INCOMPLETA: 'Falta completar la ficha del alumno (fecha de nacimiento, domicilio y contacto de emergencia) antes de cobrar la primera cuota.',
   FECHA_NACIMIENTO_INVALIDA: 'Revisá la fecha de nacimiento.',
 }
 export const mensajeError = (error) => {
