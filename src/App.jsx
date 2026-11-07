@@ -7,6 +7,7 @@ import Cargando from './components/Cargando'
 import Login from './pages/Login'
 import DashboardIngresos from './pages/superadmin/DashboardIngresos'
 import Mostrador from './pages/recepcion/Mostrador'
+import Alumnos from './pages/recepcion/Alumnos'
 import PanelCoach from './pages/coach/PanelCoach'
 import CatalogoEjercicios from './pages/coach/CatalogoEjercicios'
 import RutinaAlumno from './pages/coach/RutinaAlumno'
@@ -33,6 +34,7 @@ export default function App() {
           </Route>
           <Route element={<RutaProtegida roles={['Recepcionista', 'SuperAdmin']} />}>
             <Route path="/recepcion" element={<Mostrador />} />
+            <Route path="/recepcion/alumnos" element={<Alumnos />} />
           </Route>
           <Route element={<RutaProtegida roles={['Coach', 'SuperAdmin']} />}>
             <Route path="/coach" element={<PanelCoach />} />
