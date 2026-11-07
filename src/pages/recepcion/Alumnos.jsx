@@ -50,10 +50,11 @@ export default function Alumnos() {
 
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
+    const qDni = q.replace(/[.\s]/g, '') // acepta el DNI con puntos: 45.666.777
     return alumnos.filter((a) => {
       if (filtro !== 'Todos' && a.estado_alumno !== filtro) return false
       if (!q) return true
-      return a.dni.includes(q) || `${a.nombre} ${a.apellido}`.toLowerCase().includes(q)
+      return (qDni && a.dni.includes(qDni)) || `${a.nombre} ${a.apellido}`.toLowerCase().includes(q)
     })
   }, [alumnos, busqueda, filtro])
 
@@ -158,11 +159,11 @@ function AltaClasePrueba({ alCancelar, alGuardar }) {
     const d = {
       nombre: datos.nombre.trim(),
       apellido: datos.apellido.trim(),
-      dni: datos.dni.trim(),
+      dni: datos.dni.replace(/[.\s]/g, ''), // se aceptan puntos y espacios: se sacan
       telefono: datos.telefono.replace(/\D/g, ''),
     }
     if (!d.nombre || !d.apellido) return setError('Completá nombre y apellido.')
-    if (!esDniValido(d.dni)) return setError('El DNI tiene que tener 7 u 8 números, sin puntos.')
+    if (!esDniValido(d.dni)) return setError('El DNI tiene que tener 7 u 8 números.')
     if (d.telefono.length < 10) return setError('El celular tiene que tener código de área y número, sin el 0 ni el 15 (ej.: 3815551234).')
 
     setEnviando(true)
@@ -196,7 +197,7 @@ function AltaClasePrueba({ alCancelar, alGuardar }) {
         </label>
         <label className="space-y-1 text-sm">
           <span className="text-neutral-400">DNI</span>
-          <input value={datos.dni} onChange={cambiar('dni')} inputMode="numeric" placeholder="Sin puntos" className={campo} />
+          <input value={datos.dni} onChange={cambiar('dni')} inputMode="numeric" placeholder="Con o sin puntos" className={campo} />
         </label>
         <label className="space-y-1 text-sm">
           <span className="text-neutral-400">Celular</span>
