@@ -19,14 +19,14 @@
 -- 1. Plan único
 --    Se conserva el plan a0000000-...-0001 (lo usa el seed) y se lo
 --    renombra. Todos los alumnos quedan con ese plan y se borran los demás.
---    El precio se mantiene: lo cambia el SuperAdmin cuando quiera.
+--    Precio actual de la cuota: $60.000 (después lo cambia el SuperAdmin).
 -- ---------------------------------------------------------------------
 INSERT INTO public.planes (id, nombre, precio, dias_por_semana)
-VALUES ('a0000000-0000-0000-0000-000000000001', 'Plan mensual', 18000, NULL)
+VALUES ('a0000000-0000-0000-0000-000000000001', 'Plan mensual', 60000, NULL)
 ON CONFLICT (id) DO NOTHING;
 
 UPDATE public.planes
-   SET nombre = 'Plan mensual', dias_por_semana = NULL, activo = TRUE
+   SET nombre = 'Plan mensual', precio = 60000, dias_por_semana = NULL, activo = TRUE
  WHERE id = 'a0000000-0000-0000-0000-000000000001';
 
 UPDATE public.alumnos
