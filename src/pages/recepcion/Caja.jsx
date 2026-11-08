@@ -143,7 +143,8 @@ function TurnoAbierto({ turno }) {
 const CAMPOS_COBRO =
   'alumno_id, dni, nombre, apellido, telefono, email, precio_plan, fecha_vencimiento, estado_alumno, estado_membresia, datos_faltantes'
 
-// Mismo cálculo que _extender_membresia: +30 días al vencimiento actual (o a hoy si nunca pagó)
+// Mismo cálculo que _extender_membresia: +30 días al vencimiento actual.
+// Si nunca pagó o está inactivo (vencido hace más de 30 días), los 30 días cuentan desde hoy.
 const sumarDias = (iso, dias) => {
   const [a, m, d] = iso.split('-').map(Number)
   const f = new Date(Date.UTC(a, m - 1, d + dias))
@@ -212,6 +213,7 @@ function CobrarCuota() {
           <p className="text-emerald-300/80">
             Nuevo vencimiento: {formatearFecha(ultimoCobro.vencimiento)}
             {ultimoCobro.primerPago && ' · Pasó de clase de prueba a alumno activo.'}
+            {ultimoCobro.vuelveInactivo && ' · Volvió a estar activo.'}
           </p>
         </div>
       )}
@@ -266,7 +268,9 @@ function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar }) {
 
   const primerPago = alumno.estado_alumno === 'En clase de prueba'
   const faltaFicha = primerPago && alumno.datos_faltantes?.length > 0
-  const nuevoVencimiento = sumarDias(alumno.fecha_vencimiento ?? hoyAR(), 30)
+  const vuelveInactivo = alumno.estado_alumno === 'Inactivo'
+  const base = primerPago || vuelveInactivo ? hoyAR() : alumno.fecha_vencimiento
+  const nuevoVencimiento = sumarDias(base, 30)
 
   const cobrar = async () => {
     setError('')
@@ -280,6 +284,7 @@ function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar }) {
       monto: alumno.precio_plan,
       vencimiento: data,
       primerPago,
+      vuelveInactivo,
     })
   }
 
@@ -317,6 +322,9 @@ function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar }) {
 
           {primerPago && (
             <p className="text-sm text-sky-300">Es su primer pago: pasa de clase de prueba a alumno activo.</p>
+          )}
+          {vuelveInactivo && (
+            <p className="text-sm text-sky-300">Vuelve después de estar inactivo: los 30 días cuentan desde hoy.</p>
           )}
 
           <Aviso tipo="error" texto={error} />
