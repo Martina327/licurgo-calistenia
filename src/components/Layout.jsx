@@ -7,12 +7,14 @@ const MENU = {
     { to: '/admin', texto: 'Ingresos' },
     { to: '/recepcion', texto: 'Mostrador', end: true },
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
+    { to: '/recepcion/caja', texto: 'Caja' },
     { to: '/coach', texto: 'Rutinas', end: true },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
   ],
   Recepcionista: [
     { to: '/recepcion', texto: 'Mostrador', end: true },
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
+    { to: '/recepcion/caja', texto: 'Caja' },
   ],
   Coach: [
     { to: '/coach', texto: 'Alumnos y rutinas', end: true },
