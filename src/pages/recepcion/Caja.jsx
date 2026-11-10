@@ -13,7 +13,9 @@ import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 //        que estar completa: si falta algo se completa acá mismo antes de cobrar.
 //   Sin turno abierto no se puede cobrar en efectivo: la base lo rechaza (_turno_abierto).
 //   El total esperado del turno NO se muestra: el cierre es un arqueo ciego (A5).
-//   Próximos pasos: kiosco (A3), subalquileres (A4), cierre (A5).
+//   A3 · Kiosco (CU04): carrito con medio de pago; registrar_venta descuenta stock y
+//        frena si no alcanza. En efectivo va al turno; por transferencia, solo al dashboard.
+//   Próximos pasos: subalquileres (A4), cierre (A5).
 
 const formatearHora = (iso) =>
   new Date(iso).toLocaleString('es-AR', {
@@ -21,8 +23,11 @@ const formatearHora = (iso) =>
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
   })
 
+const PESTANAS = ['Cuota', 'Kiosco']
+
 export default function Caja() {
   const { perfil } = useAuth()
+  const [pestana, setPestana] = useState('Cuota')
   const [turno, setTurno] = useState(null) // turno abierto de este usuario, o null
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
@@ -49,7 +54,7 @@ export default function Caja() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold">Caja</h1>
-        <p className="text-sm text-neutral-400">Cobros en efectivo del mostrador. Se registran en tu turno de caja.</p>
+        <p className="text-sm text-neutral-400">Cobros del mostrador. Lo cobrado en efectivo se registra en tu turno de caja.</p>
       </div>
 
       <Aviso tipo="error" texto={error} />
@@ -57,7 +62,20 @@ export default function Caja() {
       {turno ? (
         <>
           <TurnoAbierto turno={turno} />
-          <CobrarCuota />
+          <div className="flex gap-2 border-b border-neutral-800">
+            {PESTANAS.map((p) => (
+              <button
+                key={p}
+                onClick={() => setPestana(p)}
+                className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+                  pestana === p ? 'border-white text-white' : 'border-transparent text-neutral-400 hover:text-white'
+                }`}
+              >
+                {p === 'Cuota' ? 'Cobrar cuota' : 'Kiosco'}
+              </button>
+            ))}
+          </div>
+          {pestana === 'Cuota' ? <CobrarCuota /> : <Kiosco />}
         </>
       ) : (
         <AbrirTurno alAbrir={cargar} />
@@ -428,5 +446,183 @@ function CompletarFicha({ alumno, alGuardar, alCancelar }) {
         </button>
       </div>
     </form>
+  )
+}
+
+// ---------------------------------------------------------------
+// Kiosco · venta (CU04)
+// ---------------------------------------------------------------
+const MEDIOS = ['Efectivo', 'Transferencia']
+
+function Kiosco() {
+  const [productos, setProductos] = useState([])
+  const [carrito, setCarrito] = useState({}) // { producto_id: cantidad }
+  const [medio, setMedio] = useState('Efectivo')
+  const [cargando, setCargando] = useState(true)
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState('')
+  const [ultimaVenta, setUltimaVenta] = useState(null)
+
+  const cargar = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('productos')
+      .select('id, nombre, precio, stock')
+      .eq('activo', true)
+      .order('nombre')
+    if (error) setError(mensajeError(error))
+    setProductos(data ?? [])
+    setCargando(false)
+  }, [])
+
+  useEffect(() => {
+    cargar()
+  }, [cargar])
+
+  const cambiarCantidad = (prod, delta) => {
+    setUltimaVenta(null)
+    setError('')
+    setCarrito((c) => {
+      const nueva = Math.min(Math.max((c[prod.id] ?? 0) + delta, 0), prod.stock)
+      const resto = { ...c }
+      if (nueva === 0) delete resto[prod.id]
+      else resto[prod.id] = nueva
+      return resto
+    })
+  }
+
+  const items = productos
+    .filter((p) => carrito[p.id])
+    .map((p) => ({ ...p, cantidad: carrito[p.id], subtotal: p.precio * carrito[p.id] }))
+  const total = items.reduce((t, i) => t + i.subtotal, 0)
+
+  const vender = async () => {
+    setError('')
+    // Control previo con el stock en pantalla (la base vuelve a controlar al guardar)
+    const sinStock = items.find((i) => i.cantidad > i.stock)
+    if (sinStock) return setError(`No hay stock suficiente de ${sinStock.nombre}: quedan ${sinStock.stock}.`)
+
+    setEnviando(true)
+    const { error } = await supabase.rpc('registrar_venta', {
+      p_items: items.map((i) => ({ producto_id: i.id, cantidad: i.cantidad })),
+      p_medio: medio,
+    })
+    setEnviando(false)
+    if (error) {
+      // STOCK_INSUFICIENTE trae el id: lo traducimos al nombre del producto
+      const id = error.message?.match(/STOCK_INSUFICIENTE: producto ([0-9a-f-]{36})/)?.[1]
+      const prod = productos.find((p) => p.id === id)
+      await cargar()
+      return setError(prod ? `No hay stock suficiente de ${prod.nombre}. Se actualizó el stock en pantalla.` : mensajeError(error))
+    }
+    setUltimaVenta({ items, total, medio })
+    setCarrito({})
+    await cargar()
+  }
+
+  if (cargando) return <Cargando />
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold">Kiosco</h2>
+        <p className="text-sm text-neutral-400">Elegí los productos y el medio de pago.</p>
+      </div>
+
+      {ultimaVenta && (
+        <div className="rounded-xl border border-emerald-900 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-200">
+          <p className="font-medium">
+            Venta registrada · {formatearPesos(ultimaVenta.total)} · {ultimaVenta.medio}
+          </p>
+          <p className="text-emerald-300/80">{ultimaVenta.items.map((i) => `${i.cantidad} × ${i.nombre}`).join(' · ')}</p>
+        </div>
+      )}
+
+      {productos.length === 0 ? (
+        <p className="text-sm text-neutral-400">No hay productos cargados.</p>
+      ) : (
+        <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800">
+          {productos.map((p) => {
+            const cant = carrito[p.id] ?? 0
+            const agotado = p.stock === 0
+            return (
+              <li key={p.id} className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${agotado ? 'opacity-50' : ''}`}>
+                <div>
+                  <p className="font-medium">{p.nombre}</p>
+                  <p className="text-xs text-neutral-400">
+                    {formatearPesos(p.precio)} · {agotado ? <span className="text-red-400">Sin stock</span> : `Stock: ${p.stock}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => cambiarCantidad(p, -1)}
+                    disabled={cant === 0}
+                    className="h-8 w-8 rounded-lg border border-neutral-700 text-lg leading-none disabled:opacity-30"
+                    aria-label={`Quitar ${p.nombre}`}
+                  >
+                    −
+                  </button>
+                  <span className="w-6 text-center tabular-nums">{cant}</span>
+                  <button
+                    onClick={() => cambiarCantidad(p, 1)}
+                    disabled={cant >= p.stock}
+                    className="h-8 w-8 rounded-lg border border-neutral-700 text-lg leading-none disabled:opacity-30"
+                    aria-label={`Agregar ${p.nombre}`}
+                  >
+                    +
+                  </button>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {items.length > 0 && (
+        <div className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+          <ul className="space-y-1 text-sm">
+            {items.map((i) => (
+              <li key={i.id} className="flex justify-between">
+                <span>{i.cantidad} × {i.nombre}</span>
+                <span className="tabular-nums">{formatearPesos(i.subtotal)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex items-baseline justify-between border-t border-neutral-800 pt-2">
+            <span className="text-neutral-400">Total</span>
+            <span className="text-xl font-semibold tabular-nums">{formatearPesos(total)}</span>
+          </div>
+
+          <div className="flex gap-2">
+            {MEDIOS.map((m) => (
+              <button
+                key={m}
+                onClick={() => setMedio(m)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm ${
+                  medio === m ? 'border-white bg-white font-semibold text-neutral-950' : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          {medio === 'Transferencia' && (
+            <p className="text-xs text-neutral-400">Confirmá que la transferencia llegó antes de registrar. No entra en el efectivo de tu caja.</p>
+          )}
+
+          <Aviso tipo="error" texto={error} />
+
+          <div className="flex justify-end gap-2">
+            <button onClick={() => { setCarrito({}); setError('') }} className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800">
+              Vaciar
+            </button>
+            <button onClick={vender} disabled={enviando} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
+              {enviando ? 'Registrando…' : `Cobrar ${formatearPesos(total)}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {items.length === 0 && <Aviso tipo="error" texto={error} />}
+    </section>
   )
 }
