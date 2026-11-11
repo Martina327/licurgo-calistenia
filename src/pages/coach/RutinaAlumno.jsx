@@ -37,7 +37,7 @@ export default function RutinaAlumno() {
       supabase.from('ejercicios').select('id, nombre, categoria, activo').order('nombre'),
       supabase
         .from('rutinas')
-        .select('id, nombre, objetivo, fecha_actualizacion, rutina_dias(numero_dia, nombre, rutina_items(ejercicio_id, bloque, orden, series, repeticiones, descanso_seg, nota))')
+        .select('id, nombre, objetivo, fecha_actualizacion, rutina_dias(numero_dia, nombre, rutina_items(ejercicio_id, bloque, orden, series, repeticiones, descanso_seg, nota, grupo))')
         .eq('alumno_id', alumnoId)
         .eq('activa', true)
         .maybeSingle(),

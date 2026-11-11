@@ -386,7 +386,8 @@ CREATE TABLE public.rutina_items (
     series         SMALLINT NOT NULL CHECK (series > 0),
     repeticiones   TEXT NOT NULL,                    -- '8', '30s', '5 c/lado', 'máx'
     descanso_seg   SMALLINT CHECK (descanso_seg >= 0),
-    nota           TEXT,                             -- indicación visible para el alumno
+    nota           TEXT,                             -- observación visible para el alumno (ⓘ)
+    grupo          SMALLINT CHECK (grupo > 0),       -- bi-serie: mismo número = se hacen seguidos sin descanso
     CONSTRAINT uq_orden_por_dia UNIQUE (rutina_dia_id, orden)
 );
 
@@ -782,7 +783,8 @@ END $$;
 -- 14.10 Guardar rutina completa (CU09)  [B1]
 --   p_rutina_id NULL → archiva la rutina activa y crea una nueva (queda historial)
 --   p_rutina_id dado → edita esa rutina activa reemplazando días e ítems
---   p_dias: [{ nombre, items: [{ ejercicio_id, bloque, series, repeticiones, descanso_seg, nota }] }]
+--   p_dias: [{ nombre, items: [{ ejercicio_id, bloque, series, repeticiones, descanso_seg, nota, grupo }] }]
+--   grupo: bi-serie (mismo número dentro del día = seguidos sin descanso; descansa el último)
 --   Día 1..n y orden de ítems (por bloque, luego posición) los calcula la función.
 CREATE FUNCTION public.guardar_rutina(
     p_alumno_id UUID, p_nombre TEXT, p_objetivo TEXT, p_dias JSONB, p_rutina_id UUID DEFAULT NULL)
@@ -846,7 +848,7 @@ BEGIN
         RETURNING id INTO v_dia_id;
 
         INSERT INTO public.rutina_items (rutina_dia_id, ejercicio_id, bloque, orden, series,
-                                         repeticiones, descanso_seg, nota)
+                                         repeticiones, descanso_seg, nota, grupo)
         SELECT v_dia_id,
                (i.value->>'ejercicio_id')::uuid,
                (i.value->>'bloque')::public.bloque_ejercicio,
@@ -854,8 +856,25 @@ BEGIN
                (i.value->>'series')::smallint,
                trim(i.value->>'repeticiones'),
                nullif(i.value->>'descanso_seg', '')::smallint,
-               nullif(trim(i.value->>'nota'), '')
+               nullif(trim(i.value->>'nota'), ''),
+               nullif(i.value->>'grupo', '')::smallint
           FROM jsonb_array_elements(v_dia.dia->'items') WITH ORDINALITY i;
+
+        -- Bi-series: 2+ ejercicios seguidos del mismo bloque con el mismo grupo
+        IF EXISTS (
+            SELECT 1 FROM public.rutina_items
+             WHERE rutina_dia_id = v_dia_id AND grupo IS NOT NULL
+             GROUP BY grupo
+            HAVING count(*) < 2 OR count(DISTINCT bloque) > 1
+                OR max(orden) - min(orden) + 1 <> count(*)
+        ) THEN
+            RAISE EXCEPTION 'BISERIE_INVALIDA: una bi-serie necesita 2 o más ejercicios seguidos del mismo bloque';
+        END IF;
+        -- Dentro de la bi-serie solo el último ejercicio lleva descanso
+        UPDATE public.rutina_items ri SET descanso_seg = NULL
+         WHERE ri.rutina_dia_id = v_dia_id AND ri.grupo IS NOT NULL AND ri.descanso_seg IS NOT NULL
+           AND ri.orden < (SELECT max(x.orden) FROM public.rutina_items x
+                            WHERE x.rutina_dia_id = v_dia_id AND x.grupo = ri.grupo);
     END LOOP;
 
     RETURN v_rutina;
@@ -942,7 +961,7 @@ SELECT r.id AS rutina_id, r.alumno_id, r.coach_id, r.nombre AS rutina, r.objetiv
        r.fecha_actualizacion, d.id AS rutina_dia_id, d.numero_dia, d.nombre AS dia,
        i.id AS item_id, i.bloque, i.orden, e.id AS ejercicio_id, e.nombre AS ejercicio,
        e.categoria, e.video_url, i.series, i.repeticiones, i.descanso_seg, i.nota,
-       e.descripcion
+       e.descripcion, i.grupo
   FROM public.rutinas r
   JOIN public.rutina_dias d       ON d.rutina_id = r.id
   LEFT JOIN public.rutina_items i ON i.rutina_dia_id = d.id

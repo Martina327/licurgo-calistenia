@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { BLOQUES_EJERCICIO, formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
-import { TEXTO_VAMOS, agruparPorDia, textoDescanso } from '../../lib/rutinas'
+import { TEXTO_VAMOS, agruparPorDia, cadenasPorGrupo, nombreCadena, textoDescanso } from '../../lib/rutinas'
 import { alternarMarca, guardarChecklist, leerChecklist } from '../../lib/checklist'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
@@ -97,9 +97,13 @@ export default function MiRutina() {
           <section key={bloque} className="space-y-2">
             <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-400">{bloque}</h2>
             <ul className="space-y-2">
-              {items.map((it) => (
-                <li key={it.item_id}>
-                  <TarjetaEjercicio item={it} hecho={check.marcados.includes(it.item_id)} onMarcar={() => marcar(it.item_id)} />
+              {cadenasPorGrupo(items).map((c) => (
+                <li key={c[0].item_id}>
+                  {c.length === 1 ? (
+                    <TarjetaEjercicio item={c[0]} hecho={check.marcados.includes(c[0].item_id)} onMarcar={() => marcar(c[0].item_id)} />
+                  ) : (
+                    <BiSerie cadena={c} marcados={check.marcados} onMarcar={marcar} />
+                  )}
                 </li>
               ))}
             </ul>
@@ -110,10 +114,32 @@ export default function MiRutina() {
   )
 }
 
-export function TarjetaEjercicio({ item: it, hecho, onMarcar, descanso = it.descanso_seg, sinDescanso = false }) {
+// Bi-serie: ejercicios seguidos sin descanso; se descansa al terminar el último
+function BiSerie({ cadena, marcados, onMarcar }) {
+  const nombres = cadena.map((i) => i.ejercicio)
+  const ultimo = nombres[nombres.length - 1]
+  return (
+    <div className="space-y-2 rounded-2xl border border-violet-700 bg-violet-950/40 p-2">
+      <div className="space-y-1 px-1 pt-1">
+        <span className="rounded-full bg-violet-600 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-white">
+          {nombreCadena(cadena.length)}
+        </span>
+        <p className="text-sm text-violet-200">
+          Hacé {nombres.slice(0, -1).join(', ')} y {ultimo} seguidos, sin descanso entre ellos. Descansá recién al terminar {ultimo}.
+        </p>
+      </div>
+      {cadena.map((it, k) => (
+        <TarjetaEjercicio key={it.item_id} item={it} hecho={marcados.includes(it.item_id)} onMarcar={() => onMarcar(it.item_id)}
+          sinDescanso={k < cadena.length - 1} />
+      ))}
+    </div>
+  )
+}
+
+function TarjetaEjercicio({ item: it, hecho, onMarcar, sinDescanso = false }) {
   const [verInfo, setVerInfo] = useState(false)
   const tieneInfo = Boolean(it.descripcion || it.nota)
-  const descansoTxt = textoDescanso(descanso)
+  const descansoTxt = textoDescanso(it.descanso_seg)
 
   return (
     <div className={`relative rounded-xl border ${hecho ? 'border-emerald-900 bg-emerald-950/40' : 'border-neutral-800 bg-neutral-900'}`}>
@@ -122,7 +148,9 @@ export function TarjetaEjercicio({ item: it, hecho, onMarcar, descanso = it.desc
         <div className="min-w-0 flex-1">
           <div className={`font-medium ${hecho ? 'text-neutral-400 line-through' : ''}`}>{it.ejercicio}</div>
           <div className="text-sm text-neutral-300">{it.series} × {it.repeticiones}</div>
-          {!sinDescanso && (
+          {sinDescanso ? (
+            <div className="text-sm font-medium text-violet-300">Sin descanso → seguí con el siguiente</div>
+          ) : (
             <div className="text-sm text-neutral-400">
               {descansoTxt ? `Descanso ${descansoTxt}` : <span className="font-semibold text-amber-300">{TEXTO_VAMOS} 🔔</span>}
             </div>

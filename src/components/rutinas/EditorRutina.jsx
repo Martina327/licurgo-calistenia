@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { BLOQUES_EJERCICIO, CATEGORIAS_EJERCICIO } from '../../lib/utils'
-import { MAX_DIAS, TEXTO_VAMOS, UNIDADES_DESCANSO, diaVacio, itemVacio } from '../../lib/rutinas'
+import { MAX_DIAS, TEXTO_VAMOS, UNIDADES_DESCANSO, cadenas, conBloque, diaVacio, itemVacio, nombreCadena } from '../../lib/rutinas'
 
 export const claseInput =
   'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm outline-none focus:border-neutral-400'
@@ -26,21 +26,55 @@ export default function EditorRutina({ value, onChange, ejercicios, conObjetivo 
     editar((r) => { r.dias.splice(iDia, 1); return r })
     setDiaSel(Math.max(0, iDia - 1))
   }
-  const cambiarItem = (key, campo, valor) =>
-    editar((r) => { const it = r.dias[iDia].items.find((i) => i.key === key); it[campo] = valor; return r })
-  const agregarItem = (bloque) => editar((r) => { r.dias[iDia].items.push(itemVacio(bloque)); return r })
-  const quitarItem = (key) => editar((r) => { r.dias[iDia].items = r.dias[iDia].items.filter((i) => i.key !== key); return r })
-  // Sube o baja un ítem dentro de su mismo bloque
-  const moverItem = (key, delta) =>
+  // Operaciones sobre los ítems de UN bloque del día seleccionado: reciben las cadenas del bloque
+  // (ver lib/rutinas.js → cadenas) y devuelven la lista nueva de ítems del bloque.
+  const editarBloque = (bloque, fn) =>
     editar((r) => {
-      const items = r.dias[iDia].items
-      const desde = items.findIndex((i) => i.key === key)
-      const delBloque = items.map((it, idx) => ({ it, idx })).filter(({ it }) => it.bloque === items[desde].bloque)
-      const pos = delBloque.findIndex(({ idx }) => idx === desde)
-      const destino = delBloque[pos + delta]
-      if (destino) [items[desde], items[destino.idx]] = [items[destino.idx], items[desde]]
+      const d = r.dias[iDia]
+      const delBloque = d.items.filter((i) => i.bloque === bloque)
+      d.items = conBloque(d.items, bloque, fn(cadenas(delBloque), delBloque))
       return r
     })
+
+  const cambiarItem = (bloque, key, campo, valor) =>
+    editarBloque(bloque, (cs) => {
+      for (const c of cs) {
+        const it = c.find((i) => i.key === key)
+        if (!it) continue
+        // En una bi-serie las series van juntas
+        if (campo === 'series') c.forEach((i) => { i.series = valor })
+        else it[campo] = valor
+      }
+      return cs.flat()
+    })
+  const agregarItem = (bloque) => editarBloque(bloque, (cs, items) => [...items, itemVacio(bloque)])
+  const quitarItem = (bloque, key) =>
+    editarBloque(bloque, (cs, items) => {
+      const n = items.findIndex((i) => i.key === key)
+      // Si era el último de una bi-serie, el anterior deja de estar unido
+      if (n > 0 && !items[n].enlazado) items[n - 1].enlazado = false
+      return items.filter((i) => i.key !== key)
+    })
+  // Sube o baja un ejercicio suelto o una bi-serie entera, saltando al bloque vecino
+  const moverCadena = (bloque, nCadena, delta) =>
+    editarBloque(bloque, (cs) => {
+      const destino = nCadena + delta
+      if (destino >= 0 && destino < cs.length) [cs[nCadena], cs[destino]] = [cs[destino], cs[nCadena]]
+      cs.forEach((c) => { c[c.length - 1].enlazado = false })
+      cs.forEach((c) => c.slice(0, -1).forEach((i) => { i.enlazado = true }))
+      return cs.flat()
+    })
+  // Une la cadena nCadena con la de abajo (bi-serie) o separa todos sus ejercicios
+  const unirConSiguiente = (bloque, nCadena) =>
+    editarBloque(bloque, (cs) => {
+      const c = cs[nCadena]
+      c[c.length - 1].enlazado = true
+      const series = c[0].series
+      cs[nCadena + 1]?.forEach((i) => { i.series = series })
+      return cs.flat()
+    })
+  const separar = (bloque, nCadena) =>
+    editarBloque(bloque, (cs) => { cs[nCadena].forEach((i) => { i.enlazado = false }); return cs.flat() })
 
   return (
     <div className="space-y-4">
@@ -90,9 +124,11 @@ export default function EditorRutina({ value, onChange, ejercicios, conObjetivo 
               bloque={bloque}
               items={dia.items.filter((i) => i.bloque === bloque)}
               ejercicios={ejercicios}
-              onCambiar={cambiarItem}
-              onMover={moverItem}
-              onQuitar={quitarItem}
+              onCambiar={(key, campo, valor) => cambiarItem(bloque, key, campo, valor)}
+              onMover={(n, delta) => moverCadena(bloque, n, delta)}
+              onUnir={(n) => unirConSiguiente(bloque, n)}
+              onSeparar={(n) => separar(bloque, n)}
+              onQuitar={(key) => quitarItem(bloque, key)}
               onAgregar={() => agregarItem(bloque)}
             />
           ))}
@@ -102,28 +138,60 @@ export default function EditorRutina({ value, onChange, ejercicios, conObjetivo 
   )
 }
 
-function BloqueEditor({ bloque, items, ejercicios, onCambiar, onMover, onQuitar, onAgregar }) {
+function BloqueEditor({ bloque, items, ejercicios, onCambiar, onMover, onUnir, onSeparar, onQuitar, onAgregar }) {
+  const cs = cadenas(items)
   return (
     <div className="space-y-2">
       <h3 className="text-sm font-medium uppercase tracking-wide text-neutral-400">{bloque}</h3>
       {items.length === 0 && <p className="text-sm text-neutral-600">Sin ejercicios en este bloque.</p>}
-      {items.map((it, n) => (
-        <ItemEditor
-          key={it.key}
-          item={it}
-          ejercicios={ejercicios}
-          onCambiar={(campo, valor) => onCambiar(it.key, campo, valor)}
-          onSubir={n > 0 ? () => onMover(it.key, -1) : null}
-          onBajar={n < items.length - 1 ? () => onMover(it.key, 1) : null}
-          onQuitar={() => onQuitar(it.key)}
-        />
-      ))}
+      {cs.map((c, n) => {
+        const mover = {
+          onSubir: n > 0 ? () => onMover(n, -1) : null,
+          onBajar: n < cs.length - 1 ? () => onMover(n, 1) : null,
+        }
+        return (
+          <div key={c[0].key} className="space-y-1">
+            {c.length === 1 ? (
+              <ItemEditor item={c[0]} ejercicios={ejercicios} {...mover}
+                onCambiar={(campo, valor) => onCambiar(c[0].key, campo, valor)} onQuitar={() => onQuitar(c[0].key)} />
+            ) : (
+              <div className="space-y-2 rounded-xl border border-violet-800 bg-violet-950/30 p-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                  <span className="rounded-full bg-violet-600 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-white">
+                    {nombreCadena(c.length)}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="mr-1 hidden text-xs text-violet-300 sm:inline">Sin descanso entre ejercicios · descansa al final</span>
+                    <BotonIcono titulo="Subir" disabled={!mover.onSubir} onClick={mover.onSubir}>↑</BotonIcono>
+                    <BotonIcono titulo="Bajar" disabled={!mover.onBajar} onClick={mover.onBajar}>↓</BotonIcono>
+                    <button type="button" onClick={() => onSeparar(n)} className="rounded-md px-2 py-1 text-xs text-violet-300 hover:bg-violet-900">
+                      Separar
+                    </button>
+                  </div>
+                </div>
+                {c.map((it, k) => (
+                  <ItemEditor key={it.key} item={it} ejercicios={ejercicios} enCadena
+                    sinDescanso={k < c.length - 1}
+                    onCambiar={(campo, valor) => onCambiar(it.key, campo, valor)} onQuitar={() => onQuitar(it.key)} />
+                ))}
+              </div>
+            )}
+            {n < cs.length - 1 && (
+              <button type="button" onClick={() => onUnir(n)}
+                className="block w-full text-center text-xs text-neutral-500 hover:text-violet-300"
+                title="El alumno hace los dos ejercicios seguidos y descansa recién al terminar el segundo">
+                🔗 Unir con el de abajo (bi-serie)
+              </button>
+            )}
+          </div>
+        )
+      })}
       <button onClick={onAgregar} className="text-sm text-neutral-400 hover:text-white">+ Agregar a {bloque}</button>
     </div>
   )
 }
 
-function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuitar }) {
+function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuitar, enCadena = false, sinDescanso = false }) {
   return (
     <div className="grid grid-cols-6 gap-2 rounded-lg bg-neutral-900 p-2 sm:grid-cols-12">
       <SelectorEjercicio value={it.ejercicio_id} ejercicios={ejercicios} className={`${claseInput} col-span-6 sm:col-span-4`}
@@ -132,6 +200,9 @@ function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuita
         title="Series" placeholder="Series" className={`${claseInput} col-span-2 sm:col-span-1`} />
       <input value={it.repeticiones} onChange={(e) => onCambiar('repeticiones', e.target.value)}
         title="Repeticiones" placeholder="Reps (8, 30s…)" className={`${claseInput} col-span-2 sm:col-span-2`} />
+      {sinDescanso ? (
+        <div className="col-span-2 flex items-center text-xs text-violet-300 sm:col-span-2">sin descanso ↓</div>
+      ) : (
       <div className="col-span-2 flex sm:col-span-2" title={`Descanso. Vacío = "${TEXTO_VAMOS}"`}>
         <input inputMode="decimal" value={it.descanso} onChange={(e) => onCambiar('descanso', e.target.value)}
           placeholder="¡VAMOS!" aria-label="Descanso"
@@ -141,12 +212,13 @@ function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuita
           {UNIDADES_DESCANSO.map((u) => <option key={u}>{u}</option>)}
         </select>
       </div>
+      )}
       <input value={it.nota} onChange={(e) => onCambiar('nota', e.target.value)}
         title="Observación para el alumno: la ve al tocar ⓘ" placeholder="Observación (la ve en ⓘ)"
         className={`${claseInput} col-span-4 sm:col-span-2`} />
       <div className="col-span-2 flex justify-end gap-1 sm:col-span-1">
-        <BotonIcono titulo="Subir" disabled={!onSubir} onClick={onSubir}>↑</BotonIcono>
-        <BotonIcono titulo="Bajar" disabled={!onBajar} onClick={onBajar}>↓</BotonIcono>
+        {!enCadena && <BotonIcono titulo="Subir" disabled={!onSubir} onClick={onSubir}>↑</BotonIcono>}
+        {!enCadena && <BotonIcono titulo="Bajar" disabled={!onBajar} onClick={onBajar}>↓</BotonIcono>}
         <BotonIcono titulo="Quitar" onClick={onQuitar}>✕</BotonIcono>
       </div>
     </div>
