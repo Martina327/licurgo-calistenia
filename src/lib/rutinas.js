@@ -162,29 +162,54 @@ export function validarRutina({ nombre, dias }, { exigirNombre = true } = {}) {
   return null
 }
 
-// ---- Plantillas y calentamiento estándar ----------------------
+// ---- Plantillas y copiar/pegar por nivel ----------------------
+// Tres niveles, tanto para plantillas como para copiar/pegar:
+//   · Sección      → un bloque de un día (ej. el calentamiento de piernas)
+//   · Día          → un día completo con todas sus secciones
+//   · Planificación → todos los días (la semana)
+// Pegar nunca borra lo que no corresponde: pegar una sección reemplaza solo
+// esa sección del día; pegar un día reemplaza solo ese día; una planificación
+// se puede agregar al final o reemplazar todo (lo elige el coach).
 
 export const BLOQUE_CALENTAMIENTO = 'Entrada en calor'
+export const NIVELES = { seccion: 'Sección', dia: 'Día', planificacion: 'Planificación' }
 
-// Ítems del calentamiento estándar (plantilla tipo 'Calentamiento') en formato payload
-export const itemsCalentamiento = (plantilla) =>
-  (plantilla?.dias?.[0]?.items ?? []).map((i) => ({ ...i, bloque: BLOQUE_CALENTAMIENTO }))
+// ¿El día tiene algún ejercicio? (para no pedir confirmación si está vacío)
+export const diaConEjercicios = (d) => d.items.length > 0
+export const rutinaConEjercicios = (dias) => dias.some(diaConEjercicios)
 
-// Días del editor con el calentamiento estándar cargado en los días que no tienen Entrada en calor
-export function conCalentamiento(dias, itemsCal) {
-  if (!itemsCal?.length) return dias
-  return dias.map((d) =>
-    d.items.some((i) => i.bloque === BLOQUE_CALENTAMIENTO)
-      ? d
-      : { ...d, items: [...desdePayload([{ items: itemsCal }])[0].items, ...d.items] },
-  )
+// Contenido a copiar / guardar como plantilla, en formato payload
+export const payloadSeccion = (dia, bloque) =>
+  aPayload([{ nombre: '', items: dia.items.filter((i) => i.bloque === bloque) }])
+export const payloadDia = (dia) => aPayload([dia])
+export const payloadPlanificacion = (dias) => aPayload(dias)
+
+// Reemplaza los ejercicios de UNA sección del día por los del payload (el resto del día queda igual)
+export function pegarSeccion(dia, bloque, payload) {
+  const nuevos = desdePayload([{ items: payload?.[0]?.items ?? [] }])[0].items.map((i) => ({ ...i, bloque }))
+  return { ...dia, items: conBloque(dia.items, bloque, nuevos) }
 }
 
-// Un día nuevo ya trae el calentamiento estándar
-export const diaNuevo = (itemsCal) => conCalentamiento([diaVacio()], itemsCal)[0]
+// Reemplaza un día entero; si la plantilla no trae nombre de día, conserva el actual
+export function pegarDia(dia, payload) {
+  const [nuevo] = desdePayload(payload)
+  return { ...nuevo, nombre: nuevo.nombre || dia.nombre }
+}
 
-// Rutina del editor → nueva rutina independiente (claves nuevas), para usar como base
+// Agrega días al final sin pasar de MAX_DIAS. Devuelve cuántos entraron y cuántos no.
+export function agregarDias(dias, payload) {
+  const lugar = Math.max(0, MAX_DIAS - dias.length)
+  const nuevos = desdePayload(payload)
+  return { dias: [...dias, ...nuevos.slice(0, lugar)], agregados: Math.min(lugar, nuevos.length), descartados: Math.max(0, nuevos.length - lugar) }
+}
+
+// Rutina del editor → copia independiente (claves nuevas)
 export const clonarDias = (dias) => desdePayload(aPayload(dias))
+
+// Plantillas de un nivel (y sección), ordenadas por nombre
+export const plantillasDe = (plantillas, tipo, bloque = null) =>
+  (plantillas ?? []).filter((p) => p.tipo === tipo && (tipo !== NIVELES.seccion || p.bloque === bloque))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
 
 // ---- Vista del alumno -----------------------------------------
 
