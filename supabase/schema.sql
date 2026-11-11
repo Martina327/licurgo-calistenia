@@ -32,7 +32,7 @@ DROP TABLE IF EXISTS
     -- esquema v1 (modulo_coach.sql)
     public.fichas_observaciones, public.item_ejercicio, public.rutina_dia,
     -- esquema v2
-    public.rutinas_plantilla, public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
+    public.dias_completados, public.rutinas_plantilla, public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
     public.ejercicios, public.invitaciones_retomar, public.asistencias, public.ingresos, public.venta_items,
     public.ventas, public.productos, public.espacios_alquiler, public.turnos_caja,
     public.comprobantes_pago, public.certificados_aptos, public.alumnos,
@@ -2312,6 +2312,44 @@ UPDATE public.rutinas_plantilla p
  WHERE p.dias::text ~ '"bloque": "(Entrada en calor|Estiramientos)"';
 
 DROP TABLE IF EXISTS pg_temp.semilla;
+
+
+-- ---------------------------------------------------------------------
+-- 19.12 PAREJA B · B1 ITERACIÓN 4: DÍAS COMPLETADOS EN LA SEMANA (migración 20261111_04)
+--       El alumno registra qué día de la rutina terminó; la app abre el próximo pendiente.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.dias_completados (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    alumno_id   UUID NOT NULL DEFAULT auth.uid() REFERENCES public.alumnos(usuario_id) ON DELETE CASCADE,
+    rutina_id   UUID NOT NULL REFERENCES public.rutinas(id) ON DELETE CASCADE,
+    numero_dia  SMALLINT NOT NULL CHECK (numero_dia BETWEEN 1 AND 7),
+    fecha       DATE NOT NULL DEFAULT public.hoy_ar(),
+    creado      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_dia_completado UNIQUE (alumno_id, rutina_id, numero_dia, fecha)
+);
+CREATE INDEX IF NOT EXISTS idx_dias_completados_alumno ON public.dias_completados (alumno_id, fecha DESC);
+
+ALTER TABLE public.dias_completados ENABLE ROW LEVEL SECURITY;
+
+-- El alumno marca y desmarca solo sus días, de su propia rutina y con la fecha de hoy
+DROP POLICY IF EXISTS dias_completados_alumno_select ON public.dias_completados;
+DROP POLICY IF EXISTS dias_completados_alumno_insert ON public.dias_completados;
+DROP POLICY IF EXISTS dias_completados_alumno_delete ON public.dias_completados;
+DROP POLICY IF EXISTS dias_completados_staff ON public.dias_completados;
+CREATE POLICY dias_completados_alumno_select ON public.dias_completados FOR SELECT TO authenticated
+    USING (alumno_id = auth.uid());
+CREATE POLICY dias_completados_alumno_insert ON public.dias_completados FOR INSERT TO authenticated
+    WITH CHECK (alumno_id = auth.uid() AND fecha = public.hoy_ar()
+                AND EXISTS (SELECT 1 FROM public.rutinas r WHERE r.id = rutina_id AND r.alumno_id = auth.uid()));
+CREATE POLICY dias_completados_alumno_delete ON public.dias_completados FOR DELETE TO authenticated
+    USING (alumno_id = auth.uid() AND fecha = public.hoy_ar());
+-- Coach y SuperAdmin solo lo consultan
+CREATE POLICY dias_completados_staff ON public.dias_completados FOR SELECT TO authenticated
+    USING (public.mi_rol() IN ('Coach', 'SuperAdmin'));
+
+REVOKE ALL ON public.dias_completados FROM anon;
+REVOKE ALL ON public.dias_completados FROM authenticated;
+GRANT SELECT, INSERT, DELETE ON public.dias_completados TO authenticated;
 
 
 -- ---------------------------------------------------------------------
