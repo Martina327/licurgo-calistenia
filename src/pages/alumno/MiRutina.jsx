@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { BLOQUES_EJERCICIO, formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
-import { BLOQUE_CALENTAMIENTO, TEXTO_VAMOS, agruparPorDia, cadenasPorGrupo, nombreCadena, textoDescanso } from '../../lib/rutinas'
+import { TEXTO_VAMOS, agruparPorDia, llevaDescanso, cadenasPorGrupo, nombreCadena, textoDescanso } from '../../lib/rutinas'
 import { alternarMarca, guardarChecklist, leerChecklist } from '../../lib/checklist'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
@@ -140,8 +140,8 @@ function TarjetaEjercicio({ item: it, hecho, onMarcar, sinDescanso = false }) {
   const [verInfo, setVerInfo] = useState(false)
   const tieneInfo = Boolean(it.descripcion || it.nota)
   const descansoTxt = textoDescanso(it.descanso_seg)
-  // En la entrada en calor, sin descanso cargado no se muestra nada (el ¡VAMOS! es para el trabajo)
-  const ocultarDescanso = !descansoTxt && it.bloque === BLOQUE_CALENTAMIENTO
+  // Entrada en calor y Estiramientos no llevan descanso: no se muestra nada
+  const ocultarDescanso = !llevaDescanso(it.bloque)
 
   return (
     <div className={`relative rounded-xl border ${hecho ? 'border-emerald-900 bg-emerald-950/40' : 'border-neutral-800 bg-neutral-900'}`}>

@@ -68,7 +68,7 @@ DELETE FROM auth.users
 -- 1. TIPOS ENUMERADOS
 -- ---------------------------------------------------------------------
 CREATE TYPE public.rol_usuario         AS ENUM ('SuperAdmin', 'Recepcionista', 'Coach', 'Alumno');
-CREATE TYPE public.bloque_ejercicio    AS ENUM ('Entrada en calor', 'Fuerza', 'Accesorios');
+CREATE TYPE public.bloque_ejercicio    AS ENUM ('Entrada en calor', 'Fuerza', 'Accesorios', 'Estiramientos');
 CREATE TYPE public.categoria_ejercicio AS ENUM ('Tracción', 'Empuje', 'Core', 'Piernas', 'Movilidad', 'Skill');
 CREATE TYPE public.tipo_observacion    AS ENUM ('Lesión', 'Movilidad', 'Progresión técnica', 'General');
 CREATE TYPE public.medio_pago          AS ENUM ('Efectivo', 'Transferencia');
@@ -785,6 +785,7 @@ END $$;
 --   p_rutina_id dado → edita esa rutina activa reemplazando días e ítems
 --   p_dias: [{ nombre, items: [{ ejercicio_id, bloque, series, repeticiones, descanso_seg, nota, grupo }] }]
 --   grupo: bi-serie (mismo número dentro del día = seguidos sin descanso; descansa el último)
+--   Entrada en calor y Estiramientos: sin descanso ni bi-series (se limpian al guardar)
 --   Día 1..n y orden de ítems (por bloque, luego posición) los calcula la función.
 CREATE FUNCTION public.guardar_rutina(
     p_alumno_id UUID, p_nombre TEXT, p_objetivo TEXT, p_dias JSONB, p_rutina_id UUID DEFAULT NULL)
@@ -859,6 +860,11 @@ BEGIN
                nullif(trim(i.value->>'nota'), ''),
                nullif(i.value->>'grupo', '')::smallint
           FROM jsonb_array_elements(v_dia.dia->'items') WITH ORDINALITY i;
+
+        -- Entrada en calor y Estiramientos no llevan descanso ni bi-series
+        UPDATE public.rutina_items SET descanso_seg = NULL, grupo = NULL
+         WHERE rutina_dia_id = v_dia_id AND bloque IN ('Entrada en calor', 'Estiramientos')
+           AND (descanso_seg IS NOT NULL OR grupo IS NOT NULL);
 
         -- Bi-series: 2+ ejercicios seguidos del mismo bloque con el mismo grupo
         IF EXISTS (
@@ -1346,6 +1352,20 @@ UPDATE public.ejercicios SET prerrequisito_id = (SELECT id FROM public.ejercicio
 UPDATE public.ejercicios SET prerrequisito_id = (SELECT id FROM public.ejercicios WHERE nombre = 'Flexiones')
  WHERE nombre = 'Flexiones diamante';
 
+-- Calentamiento de piernas y estiramientos  [B1 · iteración 3]
+INSERT INTO public.ejercicios (nombre, categoria, descripcion) VALUES
+  ('Movilidad de tobillos',             'Movilidad', 'Rodilla hacia adelante sin levantar el talón, alternando lados'),
+  ('Puente de glúteos',                 'Piernas',   'Boca arriba, rodillas flexionadas, subir la cadera apretando glúteos'),
+  ('Estiramiento de pectoral en pared', 'Movilidad', 'Brazo apoyado en la pared a la altura del hombro, girar el torso hacia el lado contrario'),
+  ('Estiramiento de dorsal colgado',    'Movilidad', 'Colgado de la barra con agarre cómodo, relajar hombros y dejar que el cuerpo pese'),
+  ('Estiramiento de tríceps',           'Movilidad', 'Codo por detrás de la cabeza, empujar suave con la otra mano'),
+  ('Estiramiento de antebrazos',        'Movilidad', 'Brazo extendido, llevar los dedos hacia atrás con la otra mano, palma arriba y abajo'),
+  ('Estiramiento de isquiotibiales',    'Movilidad', 'Piernas extendidas, bajar con la espalda recta hacia los pies'),
+  ('Estiramiento de cuádriceps',        'Movilidad', 'De pie, llevar el talón al glúteo con las rodillas juntas'),
+  ('Estiramiento de cadera (paloma)',   'Movilidad', 'Pierna de adelante flexionada y la de atrás extendida, bajar la cadera hacia el piso'),
+  ('Estiramiento de gemelos',           'Movilidad', 'Manos en la pared, pierna de atrás extendida con el talón apoyado')
+ON CONFLICT (nombre) DO NOTHING;
+
 -- 19.6 Rutina de Lucía: 2 días, 3 bloques por día
 INSERT INTO public.rutinas (id, alumno_id, coach_id, nombre, objetivo) VALUES
   ('c0000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001',
@@ -1360,8 +1380,8 @@ INSERT INTO public.rutina_items (rutina_dia_id, ejercicio_id, bloque, orden, ser
 SELECT x.dia::uuid, e.id, x.bloque::public.bloque_ejercicio, x.orden, x.series, x.reps, x.descanso, x.nota
   FROM (VALUES
     ('c1000000-0000-0000-0000-000000000001', 'Movilidad de hombros y muñecas', 'Entrada en calor', 1, 1, '5 min', NULL, NULL),
-    ('c1000000-0000-0000-0000-000000000001', 'Scapular pull-ups',              'Entrada en calor', 2, 2, '10',    60,  NULL),
-    ('c1000000-0000-0000-0000-000000000001', 'Hollow body hold',               'Entrada en calor', 3, 3, '20s',   45,  NULL),
+    ('c1000000-0000-0000-0000-000000000001', 'Scapular pull-ups',              'Entrada en calor', 2, 2, '10',    NULL,  NULL),
+    ('c1000000-0000-0000-0000-000000000001', 'Hollow body hold',               'Entrada en calor', 3, 3, '20s',   NULL,  NULL),
     ('c1000000-0000-0000-0000-000000000001', 'Dominada negativa',              'Fuerza',           4, 4, '5',     120, 'Bajada de 5 segundos'),
     ('c1000000-0000-0000-0000-000000000001', 'Remo australiano',               'Fuerza',           5, 4, '10',    90,  NULL),
     ('c1000000-0000-0000-0000-000000000001', 'Elevaciones de rodillas colgado','Accesorios',       6, 3, '10',    60,  NULL),

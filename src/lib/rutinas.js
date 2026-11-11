@@ -20,6 +20,10 @@ export const clave = () => `k${siguienteClave++}`
 // ---- Descanso -------------------------------------------------
 // En la base se guarda siempre en segundos (descanso_seg).
 // El coach lo carga en segundos o minutos. Vacío = largar con el ¡VAMOS! del crono.
+// Entrada en calor y Estiramientos NO llevan descanso ni bi-series.
+
+export const BLOQUES_SIN_DESCANSO = ['Entrada en calor', 'Estiramientos']
+export const llevaDescanso = (bloque) => !BLOQUES_SIN_DESCANSO.includes(bloque)
 
 export const UNIDADES_DESCANSO = ['seg', 'min']
 
@@ -118,13 +122,13 @@ export function aPayload(dias) {
     const items = []
     for (const b of bloques) {
       for (const cadena of cadenas(d.items.filter((i) => i.bloque === b))) {
-        const g = cadena.length > 1 ? ++grupo : null
+        const g = cadena.length > 1 && llevaDescanso(b) ? ++grupo : null
         cadena.forEach((i, n) => items.push({
           ejercicio_id: i.ejercicio_id,
           bloque: i.bloque,
           series: Number(i.series),
           repeticiones: String(i.repeticiones).trim(),
-          descanso_seg: n < cadena.length - 1 ? null : descansoASeg(i.descanso, i.unidad),
+          descanso_seg: n < cadena.length - 1 || !llevaDescanso(b) ? null : descansoASeg(i.descanso, i.unidad),
           nota: i.nota.trim(),
           grupo: g,
         }))
@@ -144,12 +148,13 @@ export function validarRutina({ nombre, dias }, { exigirNombre = true } = {}) {
       if (!it.ejercicio_id) return `Día ${n + 1}: hay un ejercicio sin elegir.`
       if (!(Number(it.series) >= 1)) return `Día ${n + 1}: las series tienen que ser 1 o más.`
       if (!String(it.repeticiones).trim()) return `Día ${n + 1}: faltan repeticiones (ej: 8, 30s, máx).`
+      if (!llevaDescanso(it.bloque)) continue
       if (Number.isNaN(descansoASeg(it.descanso, it.unidad))) return `Día ${n + 1}: revisá el descanso (un número, o vacío para el ¡VAMOS!).`
       if ((descansoASeg(it.descanso, it.unidad) ?? 0) > 1800) return `Día ${n + 1}: el descanso no puede pasar de 30 minutos.`
     }
     for (const b of new Set(d.items.map((i) => i.bloque))) {
       for (const c of cadenas(d.items.filter((i) => i.bloque === b))) {
-        if (c.length > 1 && new Set(c.map((i) => Number(i.series))).size > 1)
+        if (c.length > 1 && llevaDescanso(b) && new Set(c.map((i) => Number(i.series))).size > 1)
           return `Día ${n + 1}: en una ${nombreCadena(c.length).toLowerCase()} todos los ejercicios llevan las mismas series.`
       }
     }
