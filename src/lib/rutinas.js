@@ -4,7 +4,12 @@
 // Funciones puras: no tocan React ni Supabase.
 //
 // "Payload" = el formato que recibe la RPC guardar_rutina (p_dias):
-//   [{ nombre, items: [{ ejercicio_id, bloque, series, repeticiones, descanso_seg, nota }] }]
+//   [{ nombre, items: [{ ejercicio_id, bloque, series, repeticiones, descanso_seg, nota, grupo }] }]
+//
+// Bi-series: ejercicios seguidos del mismo bloque que se hacen sin descanso
+// entre ellos. En la base comparten el mismo `grupo` (número por día); el
+// descanso se toma del último. En el editor cada ítem tiene `enlazado`:
+// true = "va unido al ejercicio de abajo".
 // ---------------------------------------------------------------
 
 export const MAX_DIAS = 7
@@ -50,8 +55,27 @@ export const TEXTO_VAMOS = 'Largá con el ¡VAMOS!'
 // ---- Estado del editor ----------------------------------------
 
 export const itemVacio = (bloque) => ({
-  key: clave(), ejercicio_id: '', bloque, series: 3, repeticiones: '', descanso: '', unidad: 'seg', nota: '',
+  key: clave(), ejercicio_id: '', bloque, series: 3, repeticiones: '', descanso: '', unidad: 'seg', nota: '', enlazado: false,
 })
+
+// ---- Bi-series en el editor -----------------------------------
+
+// Ítems de un bloque (en orden) → cadenas: [[a], [b, c], [d]] donde [b, c] es una bi-serie
+export function cadenas(itemsDelBloque) {
+  const res = []
+  let actual = []
+  itemsDelBloque.forEach((it, n) => {
+    actual.push(it)
+    const ultimo = n === itemsDelBloque.length - 1
+    if (!it.enlazado || ultimo) { res.push(actual); actual = [] }
+  })
+  return res
+}
+
+export const nombreCadena = (n) => (n === 2 ? 'Bi-serie' : n === 3 ? 'Tri-serie' : `Circuito de ${n}`)
+
+// Reemplaza los ítems de un bloque dentro del día respetando los de los otros bloques
+export const conBloque = (items, bloque, nuevos) => [...items.filter((i) => i.bloque !== bloque), ...nuevos]
 export const diaVacio = () => ({ key: clave(), nombre: '', items: [] })
 
 // payload (p_dias, plantilla o rutina copiada) → días del editor
@@ -59,7 +83,7 @@ export function desdePayload(dias) {
   return (dias ?? []).map((d) => ({
     key: clave(),
     nombre: d.nombre ?? '',
-    items: (d.items ?? []).map((i) => ({
+    items: (d.items ?? []).map((i, n, todos) => ({
       key: clave(),
       ejercicio_id: i.ejercicio_id ?? '',
       bloque: i.bloque,
@@ -67,9 +91,12 @@ export function desdePayload(dias) {
       repeticiones: i.repeticiones ?? '',
       ...descansoAEditor(i.descanso_seg),
       nota: i.nota ?? '',
+      enlazado: i.grupo != null && siguienteDelBloque(todos, n)?.grupo === i.grupo,
     })),
   }))
 }
+
+const siguienteDelBloque = (items, n) => items.slice(n + 1).find((x) => x.bloque === items[n].bloque)
 
 // Filas anidadas de Supabase (rutina_dias → rutina_items) → payload ordenado
 export function payloadDesdeBase(rutinaDias) {
@@ -82,18 +109,29 @@ export function payloadDesdeBase(rutinaDias) {
 }
 
 // días del editor → payload para guardar_rutina
+// Los ítems salen agrupados por bloque; cada cadena de 2+ recibe un número de grupo
+// y solo el último ejercicio de la cadena conserva el descanso.
 export function aPayload(dias) {
-  return dias.map((d) => ({
-    nombre: d.nombre.trim(),
-    items: d.items.map((i) => ({
-      ejercicio_id: i.ejercicio_id,
-      bloque: i.bloque,
-      series: Number(i.series),
-      repeticiones: String(i.repeticiones).trim(),
-      descanso_seg: descansoASeg(i.descanso, i.unidad),
-      nota: i.nota.trim(),
-    })),
-  }))
+  return dias.map((d) => {
+    const bloques = [...new Set(d.items.map((i) => i.bloque))]
+    let grupo = 0
+    const items = []
+    for (const b of bloques) {
+      for (const cadena of cadenas(d.items.filter((i) => i.bloque === b))) {
+        const g = cadena.length > 1 ? ++grupo : null
+        cadena.forEach((i, n) => items.push({
+          ejercicio_id: i.ejercicio_id,
+          bloque: i.bloque,
+          series: Number(i.series),
+          repeticiones: String(i.repeticiones).trim(),
+          descanso_seg: n < cadena.length - 1 ? null : descansoASeg(i.descanso, i.unidad),
+          nota: i.nota.trim(),
+          grupo: g,
+        }))
+      }
+    }
+    return { nombre: d.nombre.trim(), items }
+  })
 }
 
 // Devuelve el primer problema encontrado (texto para mostrar) o null si está todo bien
@@ -108,6 +146,12 @@ export function validarRutina({ nombre, dias }, { exigirNombre = true } = {}) {
       if (!String(it.repeticiones).trim()) return `Día ${n + 1}: faltan repeticiones (ej: 8, 30s, máx).`
       if (Number.isNaN(descansoASeg(it.descanso, it.unidad))) return `Día ${n + 1}: revisá el descanso (un número, o vacío para el ¡VAMOS!).`
       if ((descansoASeg(it.descanso, it.unidad) ?? 0) > 1800) return `Día ${n + 1}: el descanso no puede pasar de 30 minutos.`
+    }
+    for (const b of new Set(d.items.map((i) => i.bloque))) {
+      for (const c of cadenas(d.items.filter((i) => i.bloque === b))) {
+        if (c.length > 1 && new Set(c.map((i) => Number(i.series))).size > 1)
+          return `Día ${n + 1}: en una ${nombreCadena(c.length).toLowerCase()} todos los ejercicios llevan las mismas series.`
+      }
     }
   }
   return null
@@ -125,4 +169,15 @@ export function agruparPorDia(filas) {
   return [...dias.values()]
     .sort((a, b) => a.numero - b.numero)
     .map((d) => ({ ...d, items: d.items.sort((a, b) => a.orden - b.orden) }))
+}
+
+// Ítems ya ordenados de un bloque (filas de la vista) → cadenas según `grupo`
+export function cadenasPorGrupo(items) {
+  const res = []
+  for (const it of items) {
+    const ult = res[res.length - 1]
+    if (ult && it.grupo != null && ult[0].grupo === it.grupo) ult.push(it)
+    else res.push([it])
+  }
+  return res
 }

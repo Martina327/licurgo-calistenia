@@ -58,6 +58,7 @@ const MENSAJES = {
   RUTINA_SIN_DIAS: 'La rutina tiene que tener entre 1 y 7 días.',
   DIA_VACIO: 'Cada día necesita al menos un ejercicio.',
   RUTINA_NO_ENCONTRADA: 'Esa rutina ya no está activa (alguien la cambió). Recargá la pantalla.',
+  BISERIE_INVALIDA: 'Una bi-serie necesita 2 o más ejercicios seguidos del mismo bloque.',
   PROGRESION_CICLICA: 'Esa progresión formaría un círculo: el ejercicio elegido ya depende de este.',
   DNI_INVALIDO: 'El DNI tiene que tener 7 u 8 números, sin puntos.',
   DATOS_REQUERIDOS: 'Completá nombre y apellido.',
