@@ -79,7 +79,7 @@ export default function ObservacionesAlumno() {
             </button>
           </div>
         </div>
-        <p className="text-sm text-neutral-500">Solo las ven los coaches y el administrador. El alumno no tiene acceso.</p>
+        <p className="mt-2 text-sm text-neutral-400">Solo las ven los coaches y el administrador. El alumno no tiene acceso.</p>
       </div>
 
       {aviso && <Aviso {...aviso} />}
@@ -119,7 +119,7 @@ function ListaObservaciones({ items, onEditar, onCambiarVigente }) {
   return (
     <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800">
       {items.map((o) => (
-        <li key={o.id} className={`flex flex-wrap items-start justify-between gap-3 px-4 py-3 ${o.vigente ? '' : 'opacity-60'}`}>
+        <li key={o.id} className={`flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between ${o.vigente ? '' : 'opacity-60'}`}>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <EtiquetaTipo tipo={o.tipo} />
@@ -130,7 +130,7 @@ function ListaObservaciones({ items, onEditar, onCambiarVigente }) {
               {formatearFecha(o.fecha)}{o.coach && ` · ${o.coach.nombre} ${o.coach.apellido}`}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             <button onClick={() => onEditar(o)}
               className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800">
               Editar

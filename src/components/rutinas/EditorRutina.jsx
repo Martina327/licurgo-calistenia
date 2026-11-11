@@ -412,17 +412,19 @@ function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, o
 
 function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuitar, enCadena = false, sinDescanso = false, conDescanso = true }) {
   return (
-    <div className="grid grid-cols-6 gap-2 rounded-lg bg-neutral-950/70 p-2 sm:grid-cols-12">
-      <SelectorEjercicio value={it.ejercicio_id} ejercicios={ejercicios} className={`${claseInput} col-span-6 sm:col-span-4`}
+    // Celular (12 columnas): ejercicio | series · reps · descanso | observación · botones
+    // Pantalla ancha: todo en una fila
+    <div className="grid grid-cols-12 gap-2 rounded-lg bg-neutral-950/70 p-2">
+      <SelectorEjercicio value={it.ejercicio_id} ejercicios={ejercicios} className={`${claseInput} col-span-12 sm:col-span-4`}
         onChange={(v) => onCambiar('ejercicio_id', v)} />
       <input type="number" min="1" value={it.series} onChange={(e) => onCambiar('series', e.target.value)}
-        title="Series" placeholder="Series" className={`${claseInput} col-span-2 sm:col-span-1`} />
+        title="Series" placeholder="Series" className={`${claseInput} col-span-3 sm:col-span-1`} />
       <input value={it.repeticiones} onChange={(e) => onCambiar('repeticiones', e.target.value)}
-        title="Repeticiones" placeholder="Reps (8, 30s…)" className={`${claseInput} col-span-2 sm:col-span-2`} />
+        title="Repeticiones" placeholder="Reps (8, 30s…)" className={`${claseInput} ${conDescanso ? 'col-span-4' : 'col-span-9'} sm:col-span-2`} />
       {!conDescanso ? null : sinDescanso ? (
-        <div className="col-span-2 flex items-center text-xs text-fuchsia-300 sm:col-span-2">sin descanso ↓</div>
+        <div className="col-span-5 flex items-center text-xs text-fuchsia-300 sm:col-span-2">sin descanso ↓</div>
       ) : (
-      <div className="col-span-2 flex sm:col-span-2" title={`Descanso. Vacío = "${TEXTO_VAMOS}"`}>
+      <div className="col-span-5 flex sm:col-span-2" title={`Descanso. Vacío = "${TEXTO_VAMOS}"`}>
         <input inputMode="decimal" value={it.descanso} onChange={(e) => onCambiar('descanso', e.target.value)}
           placeholder="¡VAMOS!" aria-label="Descanso"
           className={`${claseInput} min-w-0 rounded-r-none`} />
@@ -434,8 +436,8 @@ function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuita
       )}
       <input value={it.nota} onChange={(e) => onCambiar('nota', e.target.value)}
         title="Observación para el alumno: la ve al tocar ⓘ" placeholder="Observación ⓘ"
-        className={`${claseInput} ${conDescanso ? 'col-span-4 sm:col-span-2' : 'col-span-6 sm:col-span-4'}`} />
-      <div className="col-span-2 flex justify-end gap-1 sm:col-span-1">
+        className={`${claseInput} col-span-8 ${conDescanso ? 'sm:col-span-2' : 'sm:col-span-4'}`} />
+      <div className="col-span-4 flex items-center justify-end gap-1 sm:col-span-1">
         {!enCadena && <BotonIcono titulo="Subir" disabled={!onSubir} onClick={onSubir}>↑</BotonIcono>}
         {!enCadena && <BotonIcono titulo="Bajar" disabled={!onBajar} onClick={onBajar}>↓</BotonIcono>}
         <BotonIcono titulo="Quitar" onClick={onQuitar}>✕</BotonIcono>

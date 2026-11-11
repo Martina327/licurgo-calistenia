@@ -98,39 +98,40 @@ export default function PanelCoach() {
       ) : (
       <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800">
         {visibles.map((a) => (
-          <li key={a.alumno_id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-            <div>
-              <div className="font-medium text-neutral-100">{a.apellido}, {a.nombre}</div>
-              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+          <li key={a.alumno_id} className="flex items-start justify-between gap-3 px-4 py-3">
+            {/* Izquierda: nombre y etiquetas (bajan de línea si no entran). Derecha: siempre el botón */}
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium text-neutral-100">{a.apellido}, {a.nombre}</div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
                 <span className={`rounded-full px-2 py-0.5 ${COLOR_ESTADO[etiquetaEstado(a)] ?? 'bg-neutral-800 text-neutral-300'}`}>
                   {etiquetaEstado(a)}
                 </span>
+                {!a.tieneRutina && (
+                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-300">Sin rutina</span>
+                )}
                 {a.diasSemana > 0 && (
-                  <span className="text-emerald-400" title="Días de la rutina completados esta semana">
+                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-300" title="Días de la rutina completados esta semana">
                     ✓ {a.diasSemana} día{a.diasSemana > 1 ? 's' : ''} esta semana
                   </span>
                 )}
+                <Link
+                  to={`/coach/alumnos/${a.alumno_id}/observaciones`}
+                  className={`rounded-full px-2 py-0.5 ${
+                    a.observaciones > 0 ? 'bg-amber-950 text-amber-300 hover:bg-amber-900' : 'px-0.5 text-neutral-400 underline-offset-2 hover:text-white hover:underline'
+                  }`}
+                >
+                  {a.observaciones > 0 ? `⚠ ${a.observaciones} observaci${a.observaciones > 1 ? 'ones' : 'ón'}` : 'Observaciones'}
+                </Link>
               </div>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Link
-                to={`/coach/alumnos/${a.alumno_id}/observaciones`}
-                className={`rounded-full px-2.5 py-0.5 text-xs ${
-                  a.observaciones > 0 ? 'bg-amber-950 text-amber-300 hover:bg-amber-900' : 'text-neutral-500 hover:text-white'
-                }`}
-              >
-                {a.observaciones > 0 ? `⚠ ${a.observaciones} observación(es)` : 'Observaciones'}
-              </Link>
-              {!a.tieneRutina && (
-                <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs text-amber-300">Sin rutina</span>
-              )}
-              <Link
-                to={`/coach/alumnos/${a.alumno_id}/rutina`}
-                className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
-              >
-                {a.tieneRutina ? 'Ver rutina' : 'Armar rutina'}
-              </Link>
-            </div>
+            <Link
+              to={`/coach/alumnos/${a.alumno_id}/rutina`}
+              className={`shrink-0 rounded-lg px-3 py-1.5 text-sm ${
+                a.tieneRutina ? 'border border-neutral-700 text-neutral-200 hover:bg-neutral-800' : 'bg-white font-medium text-neutral-950 hover:bg-neutral-200'
+              }`}
+            >
+              {a.tieneRutina ? 'Ver rutina' : 'Armar rutina'}
+            </Link>
           </li>
         ))}
       </ul>
