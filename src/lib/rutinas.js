@@ -157,6 +157,30 @@ export function validarRutina({ nombre, dias }, { exigirNombre = true } = {}) {
   return null
 }
 
+// ---- Plantillas y calentamiento estándar ----------------------
+
+export const BLOQUE_CALENTAMIENTO = 'Entrada en calor'
+
+// Ítems del calentamiento estándar (plantilla tipo 'Calentamiento') en formato payload
+export const itemsCalentamiento = (plantilla) =>
+  (plantilla?.dias?.[0]?.items ?? []).map((i) => ({ ...i, bloque: BLOQUE_CALENTAMIENTO }))
+
+// Días del editor con el calentamiento estándar cargado en los días que no tienen Entrada en calor
+export function conCalentamiento(dias, itemsCal) {
+  if (!itemsCal?.length) return dias
+  return dias.map((d) =>
+    d.items.some((i) => i.bloque === BLOQUE_CALENTAMIENTO)
+      ? d
+      : { ...d, items: [...desdePayload([{ items: itemsCal }])[0].items, ...d.items] },
+  )
+}
+
+// Un día nuevo ya trae el calentamiento estándar
+export const diaNuevo = (itemsCal) => conCalentamiento([diaVacio()], itemsCal)[0]
+
+// Rutina del editor → nueva rutina independiente (claves nuevas), para usar como base
+export const clonarDias = (dias) => desdePayload(aPayload(dias))
+
 // ---- Vista del alumno -----------------------------------------
 
 // Filas planas de v_rutina_alumno → días con sus ítems ordenados

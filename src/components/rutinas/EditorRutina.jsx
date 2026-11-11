@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { BLOQUES_EJERCICIO, CATEGORIAS_EJERCICIO } from '../../lib/utils'
-import { MAX_DIAS, TEXTO_VAMOS, UNIDADES_DESCANSO, cadenas, conBloque, diaVacio, itemVacio, nombreCadena } from '../../lib/rutinas'
+import {
+  BLOQUE_CALENTAMIENTO, MAX_DIAS, TEXTO_VAMOS, UNIDADES_DESCANSO, cadenas, conBloque, desdePayload, diaNuevo, itemVacio, nombreCadena,
+} from '../../lib/rutinas'
 
 export const claseInput =
   'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm outline-none focus:border-neutral-400'
@@ -9,7 +11,10 @@ export const claseInput =
 //   value = { nombre, objetivo, dias: [...] }  (dias en el formato de lib/rutinas.js)
 // Lo usan la rutina de cada alumno y las plantillas. Para reiniciar la pestaña de día
 // (ej. al cargar otra rutina), el padre le cambia la `key`.
-export default function EditorRutina({ value, onChange, ejercicios, conObjetivo = true }) {
+//   calentamiento: ítems del calentamiento estándar (payload). Los días nuevos lo traen cargado
+//                  y la Entrada en calor tiene un botón para volver a cargarlo.
+//   soloCalentamiento: edita el calentamiento estándar (un día, solo Entrada en calor).
+export default function EditorRutina({ value, onChange, ejercicios, calentamiento = [], soloCalentamiento = false }) {
   const [diaSel, setDiaSel] = useState(0)
   const rutina = value
   const dia = rutina.dias[Math.min(diaSel, rutina.dias.length - 1)]
@@ -18,7 +23,7 @@ export default function EditorRutina({ value, onChange, ejercicios, conObjetivo 
   const editar = (cambio) => onChange(cambio(structuredClone(rutina)))
 
   const agregarDia = () => {
-    editar((r) => { r.dias.push(diaVacio()); return r })
+    editar((r) => { r.dias.push(diaNuevo(calentamiento)); return r })
     setDiaSel(rutina.dias.length)
   }
   const quitarDia = () => {
@@ -73,6 +78,11 @@ export default function EditorRutina({ value, onChange, ejercicios, conObjetivo 
       cs[nCadena + 1]?.forEach((i) => { i.series = series })
       return cs.flat()
     })
+  const cargarCalentamiento = () => {
+    const actuales = dia.items.filter((i) => i.bloque === BLOQUE_CALENTAMIENTO)
+    if (actuales.length && !window.confirm('¿Reemplazar la entrada en calor de este día por el calentamiento estándar?')) return
+    editarBloque(BLOQUE_CALENTAMIENTO, () => desdePayload([{ items: calentamiento }])[0].items)
+  }
   const separar = (bloque, nCadena) =>
     editarBloque(bloque, (cs) => { cs[nCadena].forEach((i) => { i.enlazado = false }); return cs.flat() })
 
@@ -80,11 +90,11 @@ export default function EditorRutina({ value, onChange, ejercicios, conObjetivo 
     <div className="space-y-4">
       <section className="grid gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:grid-cols-2">
         <label className="block text-sm">
-          <span className="text-neutral-300">Nombre de la rutina</span>
+          <span className="text-neutral-300">{soloCalentamiento ? 'Nombre' : 'Nombre de la rutina'}</span>
           <input value={rutina.nombre} onChange={(e) => editar((r) => { r.nombre = e.target.value; return r })}
             placeholder="Ej: Fuerza básica – tren superior" className={`mt-1 ${claseInput}`} />
         </label>
-        {conObjetivo && (
+        {!soloCalentamiento && (
           <label className="block text-sm">
             <span className="text-neutral-300">Objetivo (lo ve el alumno)</span>
             <input value={rutina.objetivo} onChange={(e) => editar((r) => { r.objetivo = e.target.value; return r })}
@@ -93,7 +103,7 @@ export default function EditorRutina({ value, onChange, ejercicios, conObjetivo 
         )}
       </section>
 
-      <div className="flex flex-wrap items-center gap-2">
+      {!soloCalentamiento && <div className="flex flex-wrap items-center gap-2">
         {rutina.dias.map((d, i) => (
           <button key={d.key} onClick={() => setDiaSel(i)}
             className={`rounded-lg px-3 py-1.5 text-sm ${i === iDia ? 'bg-white text-neutral-950' : 'border border-neutral-700 text-neutral-300'}`}>
@@ -103,11 +113,11 @@ export default function EditorRutina({ value, onChange, ejercicios, conObjetivo 
         {rutina.dias.length < MAX_DIAS && (
           <button onClick={agregarDia} className="rounded-lg px-3 py-1.5 text-sm text-neutral-400 hover:text-white">+ Día</button>
         )}
-      </div>
+      </div>}
 
       {dia && (
         <section className="space-y-4 rounded-xl border border-neutral-800 p-4">
-          <div className="flex flex-wrap items-end gap-3">
+          {!soloCalentamiento && <div className="flex flex-wrap items-end gap-3">
             <label className="block min-w-48 flex-1 text-sm">
               <span className="text-neutral-300">Nombre del Día {iDia + 1}</span>
               <input value={dia.nombre} onChange={(e) => editar((r) => { r.dias[iDia].nombre = e.target.value; return r })}
@@ -116,12 +126,17 @@ export default function EditorRutina({ value, onChange, ejercicios, conObjetivo 
             {rutina.dias.length > 1 && (
               <button onClick={quitarDia} className="rounded-md px-3 py-1.5 text-sm text-red-400 hover:bg-red-950">Quitar día</button>
             )}
-          </div>
+          </div>}
 
-          {BLOQUES_EJERCICIO.map((bloque) => (
+          {BLOQUES_EJERCICIO.filter((b) => !soloCalentamiento || b === BLOQUE_CALENTAMIENTO).map((bloque) => (
             <BloqueEditor
               key={bloque}
               bloque={bloque}
+              accion={bloque === BLOQUE_CALENTAMIENTO && calentamiento.length > 0 && !soloCalentamiento && (
+                <button type="button" onClick={cargarCalentamiento} className="text-xs text-neutral-400 underline hover:text-white">
+                  Cargar calentamiento estándar
+                </button>
+              )}
               items={dia.items.filter((i) => i.bloque === bloque)}
               ejercicios={ejercicios}
               onCambiar={(key, campo, valor) => cambiarItem(bloque, key, campo, valor)}
@@ -138,11 +153,14 @@ export default function EditorRutina({ value, onChange, ejercicios, conObjetivo 
   )
 }
 
-function BloqueEditor({ bloque, items, ejercicios, onCambiar, onMover, onUnir, onSeparar, onQuitar, onAgregar }) {
+function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, onUnir, onSeparar, onQuitar, onAgregar }) {
   const cs = cadenas(items)
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-medium uppercase tracking-wide text-neutral-400">{bloque}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-medium uppercase tracking-wide text-neutral-400">{bloque}</h3>
+        {accion}
+      </div>
       {items.length === 0 && <p className="text-sm text-neutral-600">Sin ejercicios en este bloque.</p>}
       {cs.map((c, n) => {
         const mover = {
@@ -214,7 +232,7 @@ function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuita
       </div>
       )}
       <input value={it.nota} onChange={(e) => onCambiar('nota', e.target.value)}
-        title="Observación para el alumno: la ve al tocar ⓘ" placeholder="Observación (la ve en ⓘ)"
+        title="Observación para el alumno: la ve al tocar ⓘ" placeholder="Observación ⓘ"
         className={`${claseInput} col-span-4 sm:col-span-2`} />
       <div className="col-span-2 flex justify-end gap-1 sm:col-span-1">
         {!enCadena && <BotonIcono titulo="Subir" disabled={!onSubir} onClick={onSubir}>↑</BotonIcono>}
