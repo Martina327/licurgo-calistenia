@@ -235,3 +235,28 @@ export function cadenasPorGrupo(items) {
   }
   return res
 }
+
+// Qué se tilda en el checklist del alumno (CU11). Una "tarea" = un tilde:
+//   · seccion   → Entrada en calor y Estiramientos: un solo tilde para toda la sección
+//                 (se hacen de corrido, sin descanso)
+//   · cadena    → bi-serie / tri-serie: un solo tilde para todo el bloque de ejercicios
+//   · ejercicio → el resto: un tilde por ejercicio
+// `items` = filas del día ya ordenadas (agruparPorDia). El id sale del primer ejercicio:
+// si el coach edita la rutina, los ids cambian y las marcas viejas dejan de coincidir.
+export function tareasDelDia(items) {
+  const bloques = [...new Set(items.map((i) => i.bloque))]
+  const tareas = []
+  for (const bloque of bloques) {
+    const delBloque = items.filter((i) => i.bloque === bloque)
+    if (!llevaDescanso(bloque)) {
+      tareas.push({ id: `s:${delBloque[0].item_id}`, tipo: 'seccion', bloque, items: delBloque })
+      continue
+    }
+    for (const c of cadenasPorGrupo(delBloque)) {
+      tareas.push(c.length > 1
+        ? { id: `g:${c[0].item_id}`, tipo: 'cadena', bloque, items: c }
+        : { id: c[0].item_id, tipo: 'ejercicio', bloque, items: c })
+    }
+  }
+  return tareas
+}

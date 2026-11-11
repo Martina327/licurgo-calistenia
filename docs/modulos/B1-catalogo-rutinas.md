@@ -45,7 +45,7 @@ dev
 | Coach / SuperAdmin | `/coach/alumnos/:id/rutina` | Arma la rutina activa por días y secciones (CU09). Muestra las observaciones vigentes del alumno. Menús para pegar plantillas, copiar/pegar y guardar como plantilla en tres niveles: sección, día y planificación |
 | Coach / SuperAdmin | `/coach/alumnos/:id/observaciones` | Observaciones privadas del alumno: lesiones, movilidad, etc. Alta, edición, marcar resuelta (CU10) |
 | Coach / SuperAdmin | `/coach/plantillas` | Plantillas de **planificación** (ej. *Fuerza básica*), de **día** (ej. *Tren superior*) y de **sección** (ej. *Calentamiento piernas*, *Estiramiento tren superior*) |
-| Alumno | `/alumno/rutina` | Rutina del día con checklist. Cada ejercicio: nombre, series × reps, descanso y tilde; ⓘ con descripción y observación del coach (CU11) |
+| Alumno | `/alumno/rutina` | Rutina del día con checklist (CU11). Cada sección con su color. **Un tilde** por ejercicio suelto, **uno para toda la Entrada en calor**, **uno para todos los Estiramientos** y **uno por bi-serie/tri-serie**. Barra de progreso fija arriba (un tramo por tilde, del color de su sección). ⓘ con descripción y observación del coach |
 
 ## Reglas
 
