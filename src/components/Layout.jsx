@@ -33,7 +33,8 @@ export default function Layout() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-neutral-800 bg-neutral-950/90 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3">
+        {/* Altura fija (56px + 1px de borde): la barra de progreso del alumno se pega justo debajo (top-[57px]) */}
+        <div className="mx-auto flex h-14 max-w-5xl items-center gap-4 px-4">
           <span className="font-bold tracking-wide">LICURGO</span>
           <nav className="flex flex-1 gap-1 overflow-x-auto">
             {items.map((i) => (
