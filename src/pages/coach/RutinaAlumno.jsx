@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { BLOQUES_EJERCICIO, CATEGORIAS_EJERCICIO, formatearFecha, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import { EtiquetaTipo } from './ObservacionesAlumno'
 
 const MAX_DIAS = 7
 let siguienteClave = 1
@@ -43,6 +44,7 @@ function aEstado(rutina) {
 export default function RutinaAlumno() {
   const { alumnoId } = useParams()
   const [alumno, setAlumno] = useState(null)
+  const [observaciones, setObservaciones] = useState([])
   const [ejercicios, setEjercicios] = useState([])
   const [rutina, setRutina] = useState(null) // estado del editor; null = sin rutina activa
   const [diaSel, setDiaSel] = useState(0)
@@ -52,7 +54,7 @@ export default function RutinaAlumno() {
   const [aviso, setAviso] = useState(null)
 
   const cargar = async () => {
-    const [alumnoRes, ejerciciosRes, rutinaRes] = await Promise.all([
+    const [alumnoRes, ejerciciosRes, rutinaRes, obsRes] = await Promise.all([
       supabase.from('v_membresias').select('alumno_id, nombre, apellido, plan').eq('alumno_id', alumnoId).maybeSingle(),
       supabase.from('ejercicios').select('id, nombre, categoria, activo').order('nombre'),
       supabase
@@ -61,10 +63,13 @@ export default function RutinaAlumno() {
         .eq('alumno_id', alumnoId)
         .eq('activa', true)
         .maybeSingle(),
+      supabase.from('observaciones_alumno').select('id, tipo, titulo, descripcion')
+        .eq('alumno_id', alumnoId).eq('vigente', true).order('fecha', { ascending: false }),
     ])
     const error = alumnoRes.error ?? ejerciciosRes.error ?? rutinaRes.error
     if (error) setAviso({ tipo: 'error', texto: mensajeError(error) })
     setAlumno(alumnoRes.data)
+    setObservaciones(obsRes.data ?? [])
     setEjercicios(ejerciciosRes.data ?? [])
     setRutina(rutinaRes.data ? aEstado(rutinaRes.data) : null)
     setDiaSel(0)
@@ -175,6 +180,8 @@ export default function RutinaAlumno() {
           {rutina?.fecha_actualizacion && ` · Actualizada el ${formatearFecha(rutina.fecha_actualizacion)}`}
         </p>
       </div>
+
+      <ResumenObservaciones alumnoId={alumnoId} observaciones={observaciones} />
 
       {aviso && <Aviso {...aviso} />}
 
@@ -323,5 +330,31 @@ function BotonIcono({ titulo, onClick, disabled, children }) {
       className="h-8 w-8 rounded-md text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:opacity-30">
       {children}
     </button>
+  )
+}
+
+// Lesiones y demás observaciones vigentes, a la vista mientras el coach arma la rutina
+function ResumenObservaciones({ alumnoId, observaciones }) {
+  return (
+    <section className={`rounded-xl border p-3 ${observaciones.length ? 'border-amber-900 bg-amber-950/30' : 'border-neutral-800'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-medium">
+          {observaciones.length ? `⚠ Observaciones vigentes (${observaciones.length})` : 'Sin observaciones vigentes'}
+        </h2>
+        <Link to={`/coach/alumnos/${alumnoId}/observaciones`} className="text-sm text-neutral-400 underline hover:text-white">
+          {observaciones.length ? 'Ver y editar' : 'Cargar observación'}
+        </Link>
+      </div>
+      {observaciones.length > 0 && (
+        <ul className="mt-2 space-y-1.5">
+          {observaciones.map((o) => (
+            <li key={o.id} className="text-sm">
+              <EtiquetaTipo tipo={o.tipo} /> <span className="font-medium">{o.titulo}</span>
+              <span className="text-neutral-400"> — {o.descripcion}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }

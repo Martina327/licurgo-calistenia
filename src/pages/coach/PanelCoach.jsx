@@ -4,8 +4,7 @@ import { supabase } from '../../lib/supabase'
 import Cargando from '../../components/Cargando'
 
 // Panel del coach: lista los alumnos, si tienen rutina activa y cuántas observaciones vigentes.
-// Desde acá se entra a armar la rutina de cada uno (CU09).
-// Pendiente (fase 3): cargar observaciones (CU10).
+// Desde acá se entra a la rutina (CU09) y a las observaciones (CU10) de cada uno.
 export default function PanelCoach() {
   const [alumnos, setAlumnos] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -35,17 +34,20 @@ export default function PanelCoach() {
       <h1 className="text-xl font-semibold">Alumnos</h1>
       <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800">
         {alumnos.map((a) => (
-          <li key={a.alumno_id} className="flex items-center justify-between px-4 py-3">
+          <li key={a.alumno_id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
             <div>
               <div>{a.apellido}, {a.nombre}</div>
               <div className="text-xs text-neutral-500">{a.plan ?? 'Sin plan'} · {a.estado_membresia}</div>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {a.observaciones > 0 && (
-                <span className="rounded-full bg-amber-950 px-2.5 py-0.5 text-xs text-amber-300">
-                  {a.observaciones} observación(es)
-                </span>
-              )}
+              <Link
+                to={`/coach/alumnos/${a.alumno_id}/observaciones`}
+                className={`rounded-full px-2.5 py-0.5 text-xs ${
+                  a.observaciones > 0 ? 'bg-amber-950 text-amber-300 hover:bg-amber-900' : 'text-neutral-500 hover:text-white'
+                }`}
+              >
+                {a.observaciones > 0 ? `⚠ ${a.observaciones} observación(es)` : 'Observaciones'}
+              </Link>
               {!a.tieneRutina && (
                 <span className="rounded-full bg-neutral-800 px-2.5 py-0.5 text-xs text-neutral-400">Sin rutina</span>
               )}

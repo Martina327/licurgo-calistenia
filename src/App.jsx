@@ -12,6 +12,7 @@ import Alumnos from './pages/recepcion/Alumnos'
 import PanelCoach from './pages/coach/PanelCoach'
 import CatalogoEjercicios from './pages/coach/CatalogoEjercicios'
 import RutinaAlumno from './pages/coach/RutinaAlumno'
+import ObservacionesAlumno from './pages/coach/ObservacionesAlumno'
 import InicioAlumno from './pages/alumno/InicioAlumno'
 import MiRutina from './pages/alumno/MiRutina'
 
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="/coach" element={<PanelCoach />} />
             <Route path="/coach/ejercicios" element={<CatalogoEjercicios />} />
             <Route path="/coach/alumnos/:alumnoId/rutina" element={<RutinaAlumno />} />
+            <Route path="/coach/alumnos/:alumnoId/observaciones" element={<ObservacionesAlumno />} />
           </Route>
           <Route element={<RutaProtegida roles={['Alumno']} />}>
             <Route path="/alumno" element={<InicioAlumno />} />
