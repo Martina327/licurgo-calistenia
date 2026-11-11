@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { BLOQUES_EJERCICIO, formatearFecha, mensajeError } from '../../lib/utils'
+import { estiloSeccion } from '../../lib/secciones'
 import { NIVELES, aPayload, clave, desdePayload, diaVacio, validarRutina } from '../../lib/rutinas'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
@@ -159,7 +160,9 @@ export default function Plantillas() {
         BLOQUES_EJERCICIO.map((b) => (
           <section key={b} className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-400">{b}</h2>
+              <div className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm font-semibold ${estiloSeccion(b).chip}`}>
+                <span aria-hidden>{estiloSeccion(b).icono}</span><h2>{b}</h2>
+              </div>
               <button onClick={() => nueva(NIVELES.seccion, b)} className="text-sm text-neutral-400 hover:text-white">+ Nueva de {b}</button>
             </div>
             <ListaPlantillas items={delTipo.filter((p) => p.bloque === b)} boton={boton}

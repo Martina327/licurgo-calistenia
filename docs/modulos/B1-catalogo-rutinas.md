@@ -45,7 +45,7 @@ dev
 | Coach / SuperAdmin | `/coach/alumnos/:id/rutina` | Arma la rutina activa por días y secciones (CU09). Muestra las observaciones vigentes del alumno. Menús para pegar plantillas, copiar/pegar y guardar como plantilla en tres niveles: sección, día y planificación |
 | Coach / SuperAdmin | `/coach/alumnos/:id/observaciones` | Observaciones privadas del alumno: lesiones, movilidad, etc. Alta, edición, marcar resuelta (CU10) |
 | Coach / SuperAdmin | `/coach/plantillas` | Plantillas de **planificación** (ej. *Fuerza básica*), de **día** (ej. *Tren superior*) y de **sección** (ej. *Calentamiento piernas*, *Estiramiento tren superior*) |
-| Alumno | `/alumno/rutina` | Rutina del día con checklist (CU11). Cada sección con su color. **Un tilde** por ejercicio suelto, **uno para toda la Entrada en calor**, **uno para todos los Estiramientos** y **uno por bi-serie/tri-serie**. Barra de progreso fija arriba (un tramo por tilde, del color de su sección). ⓘ con descripción y observación del coach |
+| Alumno | `/alumno/rutina` | Rutina del día con checklist (CU11). Cada sección con su color. **Un tilde** por ejercicio suelto, **uno para toda la Entrada en calor**, **uno para todos los Estiramientos** y **uno por bi-serie/tri-serie**. Barra de progreso fija arriba (un tramo por tilde, del color de su sección). El checklist se reinicia cada día; el día completado queda ✓ en la semana (lunes a domingo) y al día siguiente se abre el próximo día pendiente. ⓘ con descripción y observación del coach |
 
 ## Reglas
 
@@ -80,11 +80,14 @@ Sobre una base ya cargada se corren solo las migraciones, en orden:
 | `20261111_01_b1_bloque_estiramientos` | Enum `bloque_ejercicio` + `Estiramientos` (va sola: regla de Postgres con enums) |
 | `20261111_02_b1_sin_descanso_calentamiento` | `guardar_rutina` limpia descanso y bi-serie en Entrada en calor y Estiramientos; ejercicios de estiramiento |
 | `20261111_03_b1_plantillas_por_nivel` | Plantillas por nivel (Planificación / Día / Sección + columna `bloque`) y plantillas de ejemplo |
+| `20261111_04_b1_dias_completados` | Tabla `dias_completados`: días de la rutina que el alumno completó en la semana |
 
 ## Código compartido
 
 - `src/lib/rutinas.js`: lógica pura de rutinas (base ⇄ editor ⇄ payload, descanso, bi-series, calentamiento, validación)
 - `src/lib/portapapeles.js`: copiar/pegar por nivel (localStorage)
 - `src/lib/filtroAlumnos.js`: buscador y filtro de alumnos del coach
+- `src/lib/semana.js`: días hechos en la semana y qué día le toca al alumno
+- `src/lib/secciones.js`: colores e íconos de cada sección y de los estados (alumno y coach)
 - `src/lib/checklist.js`: checklist diario del alumno (localStorage)
 - `src/components/rutinas/EditorRutina.jsx`: editor por días y bloques (rutina del alumno y plantillas)

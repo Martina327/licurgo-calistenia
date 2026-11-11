@@ -3,35 +3,19 @@ import { supabase } from '../../lib/supabase'
 import { formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
 import { TEXTO_VAMOS, agruparPorDia, nombreCadena, tareasDelDia, textoDescanso } from '../../lib/rutinas'
 import { alternarMarca, guardarChecklist, leerChecklist } from '../../lib/checklist'
+import { completadosEnSemana, diaQueToca, lunesDe } from '../../lib/semana'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import { estiloSeccion as estilo } from '../../lib/secciones'
 
-// Color e ícono de cada sección del día. Las clases van completas (Tailwind no arma nombres dinámicos).
-const SECCION = {
-  'Entrada en calor': {
-    icono: '🔥', titulo: 'Entrada en calor', panel: 'border-orange-500/30 bg-orange-500/[0.07]',
-    chip: 'bg-orange-500/20 text-orange-200', numero: 'text-orange-300', tramo: 'bg-orange-400',
-  },
-  Fuerza: {
-    icono: '💪', titulo: 'Fuerza', panel: 'border-sky-500/30 bg-sky-500/[0.07]',
-    chip: 'bg-sky-500/20 text-sky-200', numero: 'text-sky-300', tramo: 'bg-sky-400',
-  },
-  Accesorios: {
-    icono: '🎯', titulo: 'Accesorios', panel: 'border-indigo-500/30 bg-indigo-500/[0.07]',
-    chip: 'bg-indigo-500/20 text-indigo-200', numero: 'text-indigo-300', tramo: 'bg-indigo-400',
-  },
-  Estiramientos: {
-    icono: '🧘', titulo: 'Estiramientos', panel: 'border-teal-500/30 bg-teal-500/[0.07]',
-    chip: 'bg-teal-500/20 text-teal-200', numero: 'text-teal-300', tramo: 'bg-teal-400',
-  },
-}
-const estilo = (bloque) => SECCION[bloque] ?? SECCION.Fuerza
 
 // CU11 – El alumno consulta su rutina activa y va tildando lo que hace en el día.
 // Un tilde por ejercicio, salvo:
 //   · Entrada en calor y Estiramientos → un tilde para toda la sección (se hacen de corrido)
 //   · Bi-series / tri-series           → un tilde para todo el bloque de ejercicios
 // La barra de progreso queda fija arriba al hacer scroll.
+// El checklist se reinicia todos los días; al completar un día queda registrado en la semana
+// (tabla dias_completados) y al día siguiente se abre el próximo día pendiente.
 // Tocando ⓘ se ve la descripción del ejercicio y la observación del coach.
 // Las observaciones privadas del coach (lesiones, etc.) NO se muestran: son otra tabla.
 export default function MiRutina() {
@@ -39,36 +23,65 @@ export default function MiRutina() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [check, setCheck] = useState({ marcados: [], dia: null })
+  const [completados, setCompletados] = useState([]) // [{ numero_dia, fecha, creado }] desde el lunes
 
   useEffect(() => {
     // El RLS hace que el alumno solo reciba su propia rutina
     supabase
       .from('v_rutina_alumno')
       .select('*')
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (error) setError(mensajeError(error))
         setFilas(data ?? [])
-        if (data?.length) setCheck(leerChecklist(data[0].rutina_id, hoyAR()))
+        if (data?.length) {
+          setCheck(leerChecklist(data[0].rutina_id, hoyAR()))
+          const sem = await supabase.from('dias_completados').select('numero_dia, fecha, creado')
+            .eq('rutina_id', data[0].rutina_id).gte('fecha', lunesDe(hoyAR())).order('creado')
+          setCompletados(sem.data ?? [])
+        }
         setCargando(false)
       })
   }, [])
 
   const dias = useMemo(() => agruparPorDia(filas), [filas])
   const rutina = filas[0]
-  const diaActual = dias.find((d) => d.numero === check.dia) ?? dias[0]
+  const hoy = hoyAR()
+  const numeroQueToca = diaQueToca({ dias: dias.map((d) => d.numero), completados, hoy, elegidoHoy: check.dia })
+  const diaActual = dias.find((d) => d.numero === numeroQueToca) ?? dias[0]
   const tareas = useMemo(() => (diaActual ? tareasDelDia(diaActual.items) : []), [diaActual])
+  const hechosSemana = completadosEnSemana(completados, hoy)
 
   const actualizar = (nuevo) => {
     setCheck(nuevo)
     guardarChecklist(rutina.rutina_id, nuevo)
   }
   const elegirDia = (numero) => {
-    actualizar({ ...check, dia: numero })
+    actualizar({ ...check, fecha: hoyAR(), dia: numero })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
-  const marcar = (id) => actualizar(alternarMarca({ ...check, fecha: hoyAR() }, id))
-  const reiniciar = () =>
-    actualizar({ ...check, fecha: hoyAR(), marcados: check.marcados.filter((id) => !tareas.some((t) => t.id === id)) })
+  const marcar = (id) => {
+    const nuevo = alternarMarca({ ...check, fecha: hoyAR(), dia: diaActual.numero }, id)
+    actualizar(nuevo)
+    registrarDia(tareas.every((t) => nuevo.marcados.includes(t.id)))
+  }
+  // Día completo → queda hecho en la semana; si destilda algo hoy, se borra el registro de hoy
+  const registrarDia = async (completo) => {
+    const n = diaActual.numero
+    const yaHoy = completados.some((c) => c.numero_dia === n && c.fecha === hoy)
+    if (completo && !yaHoy) {
+      const fila = { rutina_id: rutina.rutina_id, numero_dia: n }
+      setCompletados((cs) => [...cs, { numero_dia: n, fecha: hoy, creado: new Date().toISOString() }])
+      const { error } = await supabase.from('dias_completados').insert(fila)
+      if (error && error.code !== '23505') setError(mensajeError(error))
+    } else if (!completo && yaHoy) {
+      setCompletados((cs) => cs.filter((c) => !(c.numero_dia === n && c.fecha === hoy)))
+      await supabase.from('dias_completados').delete().eq('rutina_id', rutina.rutina_id).eq('numero_dia', n).eq('fecha', hoy)
+    }
+  }
+  const reiniciar = () => {
+    actualizar({ ...check, fecha: hoyAR(), dia: diaActual.numero, marcados: check.marcados.filter((id) => !tareas.some((t) => t.id === id)) })
+    registrarDia(false)
+  }
 
   if (cargando) return <Cargando />
   if (error) return <div className="mx-auto max-w-md"><Aviso tipo="error" texto={error} /></div>
@@ -92,6 +105,13 @@ export default function MiRutina() {
         <h1 className="text-2xl font-bold leading-tight text-white">{rutina.rutina}</h1>
         {rutina.objetivo && <p className="mt-1 text-[15px] text-neutral-200">🎯 {rutina.objetivo}</p>}
         <p className="mt-1 text-xs text-neutral-400">Actualizada el {formatearFecha(rutina.fecha_actualizacion)}</p>
+        {dias.length > 1 && (
+          <p className="mt-2 text-sm text-neutral-200">
+            {hechosSemana.size >= dias.length
+              ? '🎉 Completaste todos los días de esta semana.'
+              : `Esta semana: ${hechosSemana.size} de ${dias.length} días hechos.`}
+          </p>
+        )}
       </header>
 
       {/* Fija debajo del menú de la app: días + progreso siempre a la vista */}
@@ -100,11 +120,16 @@ export default function MiRutina() {
           <div className="flex gap-2 overflow-x-auto">
             {dias.map((d) => {
               const activo = d.numero === diaActual.numero
+              const hecho = hechosSemana.has(d.numero)
               return (
                 <button key={d.numero} onClick={() => elegirDia(d.numero)} aria-pressed={activo}
+                  title={hecho ? 'Ya lo hiciste esta semana' : undefined}
                   className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                    activo ? 'bg-white text-neutral-950' : 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700'
+                    activo ? 'bg-white text-neutral-950'
+                      : hecho ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/40 hover:bg-emerald-500/25'
+                        : 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700'
                   }`}>
+                  {hecho && <span aria-label="hecho esta semana" className={activo ? 'text-emerald-600' : 'text-emerald-300'}>✓ </span>}
                   Día {d.numero}{d.nombre && ` · ${d.nombre}`}
                 </button>
               )
@@ -153,8 +178,7 @@ export default function MiRutina() {
                     ))}
                   </ul>
                   <BotonTilde hecho={terminada} onClick={() => marcar(seccion.id)}
-                    texto={`Terminé ${bloque === 'Entrada en calor' ? 'la entrada en calor' : 'los estiramientos'}`}
-                    textoHecho={`${st.titulo}: hecho`} />
+                    etiqueta={`${st.titulo} completado`} />
                 </>
               ) : (
                 <ul className="space-y-2.5">
@@ -187,13 +211,13 @@ function Tilde({ hecho, onClick, etiqueta }) {
   )
 }
 
-function BotonTilde({ hecho, onClick, texto, textoHecho }) {
+function BotonTilde({ hecho, onClick, etiqueta }) {
   return (
-    <button type="button" onClick={onClick} aria-pressed={hecho}
+    <button type="button" onClick={onClick} aria-pressed={hecho} aria-label={etiqueta}
       className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-[15px] font-semibold transition-colors ${
         hecho ? 'bg-emerald-400 text-neutral-950' : 'border-2 border-dashed border-neutral-500 text-neutral-100 hover:border-neutral-300'
       }`}>
-      <span aria-hidden>{hecho ? '✓' : '○'}</span>{hecho ? textoHecho : texto}
+      <span aria-hidden>{hecho ? '✓' : '○'}</span>Completado
     </button>
   )
 }
