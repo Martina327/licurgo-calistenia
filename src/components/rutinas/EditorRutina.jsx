@@ -1,33 +1,51 @@
 import { useMemo, useState } from 'react'
 import { BLOQUES_EJERCICIO, CATEGORIAS_EJERCICIO } from '../../lib/utils'
 import {
-  BLOQUE_CALENTAMIENTO, MAX_DIAS, TEXTO_VAMOS, UNIDADES_DESCANSO, cadenas, conBloque, desdePayload, diaNuevo, itemVacio, nombreCadena,
+  MAX_DIAS, NIVELES, TEXTO_VAMOS, UNIDADES_DESCANSO, agregarDias, cadenas, conBloque, diaConEjercicios, diaVacio, itemVacio,
+  llevaDescanso, nombreCadena, payloadDia, payloadPlanificacion, payloadSeccion, pegarDia, pegarSeccion, plantillasDe,
+  rutinaConEjercicios,
 } from '../../lib/rutinas'
+import * as portapapeles from '../../lib/portapapeles'
 
 export const claseInput =
   'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm outline-none focus:border-neutral-400'
 
-// Editor de una rutina por días y bloques. Controlado: recibe `value` y avisa con `onChange(nuevoValor)`.
-//   value = { nombre, objetivo, dias: [...] }  (dias en el formato de lib/rutinas.js)
-// Lo usan la rutina de cada alumno y las plantillas. Para reiniciar la pestaña de día
-// (ej. al cargar otra rutina), el padre le cambia la `key`.
-//   calentamiento: ítems del calentamiento estándar (payload). Los días nuevos lo traen cargado
-//                  y la Entrada en calor tiene un botón para volver a cargarlo.
-//   soloCalentamiento: edita el calentamiento estándar (un día, solo Entrada en calor).
-export default function EditorRutina({ value, onChange, ejercicios, calentamiento = [], soloCalentamiento = false }) {
+// Editor de rutinas por días y secciones (Entrada en calor / Fuerza / Accesorios / Estiramientos).
+// Controlado: recibe `value` = { nombre, objetivo, dias } y avisa con `onChange(nuevoValor)`.
+// Para reiniciar la pestaña de día (ej. al cargar otra rutina), el padre le cambia la `key`.
+//
+//   modo: 'planificacion' → varios días (rutina del alumno o plantilla de planificación)
+//         'dia'           → un solo día (plantilla de día)
+//         'seccion'       → una sola sección `bloque` (plantilla de sección)
+//   plantillas:          todas las plantillas activas (para "Pegar plantilla" en cada nivel)
+//   onGuardarPlantilla:  async ({ tipo, bloque, nombre, objetivo, dias }) → texto de error o null
+//   onAviso:             ({ tipo: 'ok' | 'error', texto }) para mostrar el resultado
+//   origen:              de quién es la rutina (ej. el alumno), para "Pegar … copiado de X"
+//
+// Copiar/pegar y plantillas en tres niveles (ver lib/rutinas.js):
+//   menú de cada sección · menú del día · menú de la planificación (arriba de los días)
+export default function EditorRutina({
+  value, onChange, ejercicios, plantillas = [], onGuardarPlantilla, onAviso = () => {}, origen = '',
+  modo = 'planificacion', bloque: bloqueFijo, etiquetaNombre,
+}) {
   const [diaSel, setDiaSel] = useState(0)
+  const [eleccion, setEleccion] = useState(null) // diálogo con opciones
+  const [, setCopias] = useState(0)              // re-render después de copiar
   const rutina = value
   const dia = rutina.dias[Math.min(diaSel, rutina.dias.length - 1)]
   const iDia = rutina.dias.indexOf(dia)
+  const esPlanificacion = modo === 'planificacion'
+  const bloques = modo === 'seccion' ? [bloqueFijo] : BLOQUES_EJERCICIO
+  const nombreDia = (i = iDia) => `Día ${i + 1}${rutina.dias[i]?.nombre ? ` · ${rutina.dias[i].nombre}` : ''}`
 
   const editar = (cambio) => onChange(cambio(structuredClone(rutina)))
 
   const agregarDia = () => {
-    editar((r) => { r.dias.push(diaNuevo(calentamiento)); return r })
+    editar((r) => { r.dias.push(diaVacio()); return r })
     setDiaSel(rutina.dias.length)
   }
   const quitarDia = () => {
-    if (!window.confirm(`¿Quitar el Día ${iDia + 1} y sus ejercicios?`)) return
+    if (!window.confirm(`¿Quitar el ${nombreDia()} y sus ejercicios?`)) return
     editar((r) => { r.dias.splice(iDia, 1); return r })
     setDiaSel(Math.max(0, iDia - 1))
   }
@@ -60,7 +78,7 @@ export default function EditorRutina({ value, onChange, ejercicios, calentamient
       if (n > 0 && !items[n].enlazado) items[n - 1].enlazado = false
       return items.filter((i) => i.key !== key)
     })
-  // Sube o baja un ejercicio suelto o una bi-serie entera, saltando al bloque vecino
+  // Sube o baja un ejercicio suelto o una bi-serie entera
   const moverCadena = (bloque, nCadena, delta) =>
     editarBloque(bloque, (cs) => {
       const destino = nCadena + delta
@@ -78,65 +96,183 @@ export default function EditorRutina({ value, onChange, ejercicios, calentamient
       cs[nCadena + 1]?.forEach((i) => { i.series = series })
       return cs.flat()
     })
-  const cargarCalentamiento = () => {
-    const actuales = dia.items.filter((i) => i.bloque === BLOQUE_CALENTAMIENTO)
-    if (actuales.length && !window.confirm('¿Reemplazar la entrada en calor de este día por el calentamiento estándar?')) return
-    editarBloque(BLOQUE_CALENTAMIENTO, () => desdePayload([{ items: calentamiento }])[0].items)
-  }
   const separar = (bloque, nCadena) =>
     editarBloque(bloque, (cs) => { cs[nCadena].forEach((i) => { i.enlazado = false }); return cs.flat() })
 
+  // ---- Copiar / pegar / plantillas -------------------------------------
+  const copiar = (nivel, bloque, contenido, texto) => {
+    const ok = portapapeles.copiar(nivel, bloque, { origen, ...contenido })
+    setCopias((n) => n + 1)
+    onAviso(ok ? { tipo: 'ok', texto } : { tipo: 'error', texto: 'El navegador no permitió guardar la copia.' })
+  }
+  const guardarPlantilla = async (tipo, bloque, dias, sugerido) => {
+    const nombre = window.prompt(`Nombre de la plantilla (${tipo}${bloque ? ` de ${bloque}` : ''}):`, sugerido)?.trim()
+    if (!nombre) return
+    const error = await onGuardarPlantilla({ tipo, bloque, nombre, objetivo: tipo === NIVELES.planificacion ? rutina.objetivo : null, dias })
+    onAviso(error ? { tipo: 'error', texto: error } : { tipo: 'ok', texto: `Plantilla "${nombre}" guardada. La encontrás en Coach → Plantillas.` })
+  }
+
+  // Sección: reemplaza solo esa sección del día seleccionado
+  const pegarEnSeccion = (bloque, payload, desde) => {
+    const tiene = dia.items.some((i) => i.bloque === bloque)
+    if (tiene && !window.confirm(`¿Reemplazar ${bloque} del ${nombreDia()} por "${desde}"? El resto del día no cambia.`)) return
+    editar((r) => { r.dias[iDia] = pegarSeccion(r.dias[iDia], bloque, payload); return r })
+    onAviso({ tipo: 'ok', texto: `${bloque} del ${nombreDia()}: se cargó "${desde}". Modificala si hace falta.` })
+  }
+  // Día: reemplaza solo el día seleccionado
+  const pegarEnDia = (payload, desde) => {
+    if (diaConEjercicios(dia) && !window.confirm(`¿Reemplazar el ${nombreDia()} completo por "${desde}"? Los otros días no cambian.`)) return
+    editar((r) => { r.dias[iDia] = pegarDia(r.dias[iDia], payload); return r })
+    onAviso({ tipo: 'ok', texto: `${nombreDia()}: se cargó "${desde}". Modificalo si hace falta.` })
+  }
+  // Agregar día(s) al final sin tocar los existentes
+  const agregarAlFinal = (payload, desde) => {
+    const { dias, agregados, descartados } = agregarDias(rutina.dias, payload)
+    if (!agregados) return onAviso({ tipo: 'error', texto: `Ya hay ${MAX_DIAS} días: quitá alguno para agregar otro.` })
+    onChange({ ...rutina, dias })
+    setDiaSel(rutina.dias.length)
+    onAviso({
+      tipo: 'ok',
+      texto: `Se agregó "${desde}" (${agregados} día${agregados > 1 ? 's' : ''})${descartados ? `; ${descartados} no entraron (máximo ${MAX_DIAS})` : ''}.`,
+    })
+  }
+  // Planificación: si ya hay ejercicios, el coach elige agregar al final o reemplazar todo
+  const pegarPlanificacion = (contenido, desde) => {
+    const reemplazar = () => {
+      onChange({
+        ...rutina,
+        nombre: rutina.nombre || contenido.nombre || '',
+        objetivo: rutina.objetivo || contenido.objetivo || '',
+        dias: agregarDias([], contenido.dias).dias,
+      })
+      setDiaSel(0)
+      onAviso({ tipo: 'ok', texto: `Se cargó la planificación "${desde}". Modificala si hace falta.` })
+    }
+    if (!rutinaConEjercicios(rutina.dias)) return reemplazar()
+    setEleccion({
+      titulo: `Pegar "${desde}"`,
+      texto: `Trae ${contenido.dias.length} día(s). Ya hay ${rutina.dias.length} día(s) cargados. ¿Qué hacemos?`,
+      opciones: [
+        { texto: 'Agregar sus días al final', accion: () => agregarAlFinal(contenido.dias, desde), principal: true },
+        { texto: 'Reemplazar todos los días', accion: reemplazar, peligro: true },
+      ],
+    })
+  }
+
+  // ---- Menús de cada nivel ---------------------------------------------
+  const menuSeccion = (bloque) => {
+    const copiada = portapapeles.leer('seccion', bloque)
+    const vacia = !dia.items.some((i) => i.bloque === bloque)
+    return [
+      { titulo: `Pegar plantilla de ${bloque}`, items: plantillasDe(plantillas, NIVELES.seccion, bloque)
+        .map((p) => ({ texto: p.nombre, accion: () => pegarEnSeccion(bloque, p.dias, p.nombre) })) },
+      { titulo: 'Copiado', items: copiada
+        ? [{ texto: `Pegar copiado de ${copiada.origen}`, accion: () => pegarEnSeccion(bloque, copiada.dias, `copiado de ${copiada.origen}`) }] : [] },
+      { titulo: 'Esta sección', items: [
+        { texto: 'Copiar sección', disabled: vacia,
+          accion: () => copiar('seccion', bloque, { nombre: bloque, dias: payloadSeccion(dia, bloque) },
+            `${bloque} copiada. Pegala desde el menú de ${bloque} de otro día o de otro alumno.`) },
+        onGuardarPlantilla && { texto: 'Guardar como plantilla de sección', disabled: vacia,
+          accion: () => guardarPlantilla(NIVELES.seccion, bloque, payloadSeccion(dia, bloque), '') },
+      ] },
+    ]
+  }
+  const menuDia = () => {
+    const copiado = portapapeles.leer('dia')
+    const vacio = !diaConEjercicios(dia)
+    return [
+      { titulo: 'Pegar plantilla de día', items: plantillasDe(plantillas, NIVELES.dia)
+        .map((p) => ({ texto: p.nombre, accion: () => pegarEnDia(p.dias, p.nombre) })) },
+      { titulo: 'Copiado', items: copiado
+        ? [{ texto: `Pegar día copiado de ${copiado.origen}`, accion: () => pegarEnDia(copiado.dias, `día copiado de ${copiado.origen}`) }] : [] },
+      { titulo: 'Este día', items: [
+        { texto: 'Copiar día', disabled: vacio,
+          accion: () => copiar('dia', null, { nombre: dia.nombre, dias: payloadDia(dia) },
+            `${nombreDia()} copiado. Pegalo desde el menú del día de otro alumno, o con "Agregar día".`) },
+        onGuardarPlantilla && { texto: 'Guardar como plantilla de día', disabled: vacio,
+          accion: () => guardarPlantilla(NIVELES.dia, null, payloadDia(dia), dia.nombre) },
+      ] },
+    ]
+  }
+  const menuPlanificacion = () => {
+    const copiada = portapapeles.leer('planificacion')
+    const diaCopiado = portapapeles.leer('dia')
+    const lleno = rutina.dias.length >= MAX_DIAS
+    return [
+      { titulo: 'Pegar planificación (todos los días)', items: [
+        ...plantillasDe(plantillas, NIVELES.planificacion).map((p) => ({ texto: p.nombre, accion: () => pegarPlanificacion(p, p.nombre) })),
+        copiada && { texto: `Copiada de ${copiada.origen}`, accion: () => pegarPlanificacion(copiada, `copiada de ${copiada.origen}`) },
+      ] },
+      { titulo: lleno ? `Agregar día (ya hay ${MAX_DIAS})` : 'Agregar día al final', items: [
+        ...plantillasDe(plantillas, NIVELES.dia).map((p) => ({ texto: p.nombre, disabled: lleno, accion: () => agregarAlFinal(p.dias, p.nombre) })),
+        diaCopiado && { texto: `Día copiado de ${diaCopiado.origen}`, disabled: lleno,
+          accion: () => agregarAlFinal(diaCopiado.dias, `día copiado de ${diaCopiado.origen}`) },
+      ] },
+      { titulo: 'Esta planificación', items: [
+        { texto: 'Copiar planificación', disabled: !rutinaConEjercicios(rutina.dias),
+          accion: () => copiar('planificacion', null, { nombre: rutina.nombre, objetivo: rutina.objetivo, dias: payloadPlanificacion(rutina.dias) },
+            'Planificación copiada. Pegala desde "Planificación" en otro alumno.') },
+        onGuardarPlantilla && { texto: 'Guardar como plantilla de planificación', disabled: !rutinaConEjercicios(rutina.dias),
+          accion: () => guardarPlantilla(NIVELES.planificacion, null, payloadPlanificacion(rutina.dias), rutina.nombre) },
+      ] },
+    ]
+  }
+
   return (
     <div className="space-y-4">
-      <section className="grid gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4 sm:grid-cols-2">
+      <section className={`grid gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4 ${esPlanificacion ? 'sm:grid-cols-2' : ''}`}>
         <label className="block text-sm">
-          <span className="text-neutral-300">{soloCalentamiento ? 'Nombre' : 'Nombre de la rutina'}</span>
+          <span className="text-neutral-300">{etiquetaNombre ?? 'Nombre de la rutina'}</span>
           <input value={rutina.nombre} onChange={(e) => editar((r) => { r.nombre = e.target.value; return r })}
-            placeholder="Ej: Fuerza básica – tren superior" className={`mt-1 ${claseInput}`} />
+            placeholder={modo === 'seccion' ? `Ej: ${bloqueFijo} piernas` : 'Ej: Fuerza básica – tren superior'} className={`mt-1 ${claseInput}`} />
         </label>
-        {!soloCalentamiento && (
+        {esPlanificacion && (
           <label className="block text-sm">
             <span className="text-neutral-300">Objetivo (lo ve el alumno)</span>
-            <input value={rutina.objetivo} onChange={(e) => editar((r) => { r.objetivo = e.target.value; return r })}
+            <input value={rutina.objetivo ?? ''} onChange={(e) => editar((r) => { r.objetivo = e.target.value; return r })}
               placeholder="Ej: primera dominada estricta en 8 semanas" className={`mt-1 ${claseInput}`} />
           </label>
         )}
       </section>
 
-      {!soloCalentamiento && <div className="flex flex-wrap items-center gap-2">
-        {rutina.dias.map((d, i) => (
-          <button key={d.key} onClick={() => setDiaSel(i)}
-            className={`rounded-lg px-3 py-1.5 text-sm ${i === iDia ? 'bg-white text-neutral-950' : 'border border-neutral-700 text-neutral-300'}`}>
-            Día {i + 1}{d.nombre && ` · ${d.nombre}`}
-          </button>
-        ))}
-        {rutina.dias.length < MAX_DIAS && (
-          <button onClick={agregarDia} className="rounded-lg px-3 py-1.5 text-sm text-neutral-400 hover:text-white">+ Día</button>
-        )}
-      </div>}
+      {esPlanificacion && (
+        <div className="flex flex-wrap items-center gap-2">
+          <MenuAcciones etiqueta="☰ Planificación" titulo="Pegar, agregar o copiar todos los días" grupos={menuPlanificacion()} destacado />
+          {rutina.dias.map((d, i) => (
+            <button key={d.key} onClick={() => setDiaSel(i)}
+              className={`rounded-lg px-3 py-1.5 text-sm ${i === iDia ? 'bg-white text-neutral-950' : 'border border-neutral-700 text-neutral-300'}`}>
+              {nombreDia(i)}
+            </button>
+          ))}
+          {rutina.dias.length < MAX_DIAS && (
+            <button onClick={agregarDia} className="rounded-lg px-3 py-1.5 text-sm text-neutral-400 hover:text-white">+ Día vacío</button>
+          )}
+        </div>
+      )}
 
       {dia && (
-        <section className="space-y-4 rounded-xl border border-neutral-800 p-4">
-          {!soloCalentamiento && <div className="flex flex-wrap items-end gap-3">
-            <label className="block min-w-48 flex-1 text-sm">
-              <span className="text-neutral-300">Nombre del Día {iDia + 1}</span>
-              <input value={dia.nombre} onChange={(e) => editar((r) => { r.dias[iDia].nombre = e.target.value; return r })}
-                placeholder="Ej: Tracción + Core" className={`mt-1 ${claseInput}`} />
-            </label>
-            {rutina.dias.length > 1 && (
-              <button onClick={quitarDia} className="rounded-md px-3 py-1.5 text-sm text-red-400 hover:bg-red-950">Quitar día</button>
-            )}
-          </div>}
+        <section className="space-y-5 rounded-xl border border-neutral-800 p-4">
+          {modo !== 'seccion' && (
+            <div className="flex flex-wrap items-end gap-3">
+              {esPlanificacion && (
+                <label className="block min-w-48 flex-1 text-sm">
+                  <span className="text-neutral-300">Nombre del Día {iDia + 1}</span>
+                  <input value={dia.nombre} onChange={(e) => editar((r) => { r.dias[iDia].nombre = e.target.value; return r })}
+                    placeholder="Ej: Tracción + Core" className={`mt-1 ${claseInput}`} />
+                </label>
+              )}
+              <MenuAcciones etiqueta={esPlanificacion ? `⋯ Día ${iDia + 1}` : '⋯ Día'} titulo="Pegar o copiar el día completo" grupos={menuDia()} />
+              {esPlanificacion && rutina.dias.length > 1 && (
+                <button onClick={quitarDia} className="rounded-md px-3 py-1.5 text-sm text-red-400 hover:bg-red-950">Quitar día</button>
+              )}
+            </div>
+          )}
 
-          {BLOQUES_EJERCICIO.filter((b) => !soloCalentamiento || b === BLOQUE_CALENTAMIENTO).map((bloque) => (
+          {bloques.map((bloque) => (
             <BloqueEditor
               key={bloque}
               bloque={bloque}
-              accion={bloque === BLOQUE_CALENTAMIENTO && calentamiento.length > 0 && !soloCalentamiento && (
-                <button type="button" onClick={cargarCalentamiento} className="text-xs text-neutral-400 underline hover:text-white">
-                  Cargar calentamiento estándar
-                </button>
-              )}
+              accion={<MenuAcciones etiqueta="⋯ Sección" titulo={`Pegar o copiar ${bloque}`} grupos={menuSeccion(bloque)} />}
               items={dia.items.filter((i) => i.bloque === bloque)}
               ejercicios={ejercicios}
               onCambiar={(key, campo, valor) => cambiarItem(bloque, key, campo, valor)}
@@ -149,12 +285,70 @@ export default function EditorRutina({ value, onChange, ejercicios, calentamient
           ))}
         </section>
       )}
+
+      {eleccion && <Dialogo {...eleccion} onCerrar={() => setEleccion(null)} />}
+    </div>
+  )
+}
+
+// Menú de acciones como <select> nativo: en el celular abre el selector del sistema.
+//   grupos = [{ titulo, items: [{ texto, accion, disabled }] }]  (los grupos o ítems vacíos/falsos se omiten)
+function MenuAcciones({ etiqueta, titulo, grupos, destacado = false }) {
+  const limpios = grupos
+    .map((g) => ({ ...g, items: (g.items ?? []).filter(Boolean) }))
+    .filter((g) => g.items.length)
+  const elegir = (e) => {
+    const [g, i] = e.target.value.split('-').map(Number)
+    e.target.value = ''
+    limpios[g]?.items[i]?.accion()
+  }
+  return (
+    <select value="" onChange={elegir} title={titulo} aria-label={titulo}
+      className={`max-w-56 cursor-pointer rounded-lg px-2.5 py-1.5 text-sm outline-none ${
+        destacado
+          ? 'bg-white font-semibold text-neutral-950'
+          : 'border border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-500'
+      }`}>
+      <option value="" disabled>{etiqueta}</option>
+      {limpios.map((g, gi) => (
+        <optgroup key={g.titulo} label={g.titulo}>
+          {g.items.map((it, ii) => (
+            <option key={it.texto} value={`${gi}-${ii}`} disabled={it.disabled}>{it.texto}</option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  )
+}
+
+function Dialogo({ titulo, texto, opciones, onCerrar }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label={titulo}>
+      <div className="w-full max-w-sm space-y-4 rounded-2xl border border-neutral-700 bg-neutral-900 p-5">
+        <div>
+          <h2 className="font-semibold">{titulo}</h2>
+          <p className="mt-1 text-sm text-neutral-400">{texto}</p>
+        </div>
+        <div className="flex flex-col gap-2">
+          {opciones.map((o) => (
+            <button key={o.texto} onClick={() => { onCerrar(); o.accion() }}
+              className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+                o.principal ? 'bg-white text-neutral-950' : o.peligro ? 'border border-red-800 text-red-300 hover:bg-red-950' : 'border border-neutral-700'
+              }`}>
+              {o.texto}
+            </button>
+          ))}
+          <button onClick={onCerrar} className="rounded-lg px-4 py-2 text-sm text-neutral-400 hover:text-white">Cancelar</button>
+        </div>
+      </div>
     </div>
   )
 }
 
 function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, onUnir, onSeparar, onQuitar, onAgregar }) {
-  const cs = cadenas(items)
+  // Entrada en calor y Estiramientos: sin descanso ni bi-series
+  const conDescanso = llevaDescanso(bloque)
+  const cs = conDescanso ? cadenas(items) : items.map((i) => [i])
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -170,7 +364,7 @@ function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, o
         return (
           <div key={c[0].key} className="space-y-1">
             {c.length === 1 ? (
-              <ItemEditor item={c[0]} ejercicios={ejercicios} {...mover}
+              <ItemEditor item={c[0]} ejercicios={ejercicios} {...mover} conDescanso={conDescanso}
                 onCambiar={(campo, valor) => onCambiar(c[0].key, campo, valor)} onQuitar={() => onQuitar(c[0].key)} />
             ) : (
               <div className="space-y-2 rounded-xl border border-violet-800 bg-violet-950/30 p-2">
@@ -194,7 +388,7 @@ function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, o
                 ))}
               </div>
             )}
-            {n < cs.length - 1 && (
+            {conDescanso && n < cs.length - 1 && (
               <button type="button" onClick={() => onUnir(n)}
                 className="block w-full text-center text-xs text-neutral-500 hover:text-violet-300"
                 title="El alumno hace los dos ejercicios seguidos y descansa recién al terminar el segundo">
@@ -209,7 +403,7 @@ function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, o
   )
 }
 
-function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuitar, enCadena = false, sinDescanso = false }) {
+function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuitar, enCadena = false, sinDescanso = false, conDescanso = true }) {
   return (
     <div className="grid grid-cols-6 gap-2 rounded-lg bg-neutral-900 p-2 sm:grid-cols-12">
       <SelectorEjercicio value={it.ejercicio_id} ejercicios={ejercicios} className={`${claseInput} col-span-6 sm:col-span-4`}
@@ -218,7 +412,7 @@ function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuita
         title="Series" placeholder="Series" className={`${claseInput} col-span-2 sm:col-span-1`} />
       <input value={it.repeticiones} onChange={(e) => onCambiar('repeticiones', e.target.value)}
         title="Repeticiones" placeholder="Reps (8, 30s…)" className={`${claseInput} col-span-2 sm:col-span-2`} />
-      {sinDescanso ? (
+      {!conDescanso ? null : sinDescanso ? (
         <div className="col-span-2 flex items-center text-xs text-violet-300 sm:col-span-2">sin descanso ↓</div>
       ) : (
       <div className="col-span-2 flex sm:col-span-2" title={`Descanso. Vacío = "${TEXTO_VAMOS}"`}>
@@ -233,7 +427,7 @@ function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuita
       )}
       <input value={it.nota} onChange={(e) => onCambiar('nota', e.target.value)}
         title="Observación para el alumno: la ve al tocar ⓘ" placeholder="Observación ⓘ"
-        className={`${claseInput} col-span-4 sm:col-span-2`} />
+        className={`${claseInput} ${conDescanso ? 'col-span-4 sm:col-span-2' : 'col-span-6 sm:col-span-4'}`} />
       <div className="col-span-2 flex justify-end gap-1 sm:col-span-1">
         {!enCadena && <BotonIcono titulo="Subir" disabled={!onSubir} onClick={onSubir}>↑</BotonIcono>}
         {!enCadena && <BotonIcono titulo="Bajar" disabled={!onBajar} onClick={onBajar}>↓</BotonIcono>}

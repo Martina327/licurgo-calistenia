@@ -1,17 +1,31 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import Cargando from '../../components/Cargando'
+import { FILTROS_ALUMNOS, FILTRO_INICIAL, contarPorFiltro, filtrarAlumnos } from '../../lib/filtroAlumnos'
+
+const CLAVE_FILTRO = 'licurgo.coach.filtroAlumnos'
+const leerFiltro = () => {
+  try { return localStorage.getItem(CLAVE_FILTRO) ?? FILTRO_INICIAL } catch { return FILTRO_INICIAL }
+}
 
 // Panel del coach: lista los alumnos, si tienen rutina activa y cuántas observaciones vigentes.
 // Desde acá se entra a la rutina (CU09) y a las observaciones (CU10) de cada uno.
+// Buscador por nombre, apellido o DNI y filtro por estado (por defecto, solo los que están al día).
 export default function PanelCoach() {
   const [alumnos, setAlumnos] = useState([])
   const [cargando, setCargando] = useState(true)
+  const [busqueda, setBusqueda] = useState('')
+  const [filtro, setFiltro] = useState(leerFiltro)
+
+  const elegirFiltro = (id) => {
+    setFiltro(id)
+    try { localStorage.setItem(CLAVE_FILTRO, id) } catch { /* sin almacenamiento */ }
+  }
 
   useEffect(() => {
     Promise.all([
-      supabase.from('v_membresias').select('alumno_id, nombre, apellido, plan, estado_membresia').order('apellido'),
+      supabase.from('v_membresias').select('alumno_id, dni, nombre, apellido, plan, estado_membresia, estado_alumno').order('apellido'),
       supabase.from('observaciones_alumno').select('alumno_id').eq('vigente', true),
       supabase.from('rutinas').select('alumno_id').eq('activa', true),
     ]).then(([alumnosRes, obsRes, rutinasRes]) => {
@@ -27,13 +41,51 @@ export default function PanelCoach() {
     })
   }, [])
 
+  const visibles = useMemo(() => filtrarAlumnos(alumnos, filtro, busqueda), [alumnos, filtro, busqueda])
+  const conteo = useMemo(() => contarPorFiltro(alumnos, busqueda), [alumnos, busqueda])
+
   if (cargando) return <Cargando />
 
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Alumnos</h1>
+
+      <input
+        type="search"
+        value={busqueda}
+        onChange={(e) => setBusqueda(e.target.value)}
+        placeholder="Buscar por nombre, apellido o DNI…"
+        aria-label="Buscar alumno"
+        className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+      />
+
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar por estado">
+        {FILTROS_ALUMNOS.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => elegirFiltro(f.id)}
+            aria-pressed={filtro === f.id}
+            className={`rounded-full px-3 py-1 text-sm ${
+              filtro === f.id ? 'bg-white text-neutral-950' : 'border border-neutral-700 text-neutral-300 hover:border-neutral-500'
+            }`}
+          >
+            {f.texto} <span className={filtro === f.id ? 'text-neutral-500' : 'text-neutral-500'}>{conteo[f.id]}</span>
+          </button>
+        ))}
+      </div>
+
+      {visibles.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-neutral-700 p-4 text-sm text-neutral-400">
+          {busqueda ? `Ningún alumno coincide con "${busqueda}" en este filtro.` : 'No hay alumnos en este filtro.'}
+          {filtro !== 'todos' && conteo.todos > 0 && (
+            <button onClick={() => elegirFiltro('todos')} className="ml-2 underline hover:text-white">
+              Ver en Todos ({conteo.todos})
+            </button>
+          )}
+        </div>
+      ) : (
       <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800">
-        {alumnos.map((a) => (
+        {visibles.map((a) => (
           <li key={a.alumno_id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
             <div>
               <div>{a.apellido}, {a.nombre}</div>
@@ -61,6 +113,7 @@ export default function PanelCoach() {
           </li>
         ))}
       </ul>
+      )}
     </div>
   )
 }
