@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { CATEGORIAS_EJERCICIO, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 
-const VACIO = { id: null, nombre: '', categoria: 'Tracción', descripcion: '', video_url: '', prerrequisito_id: '' }
+const VACIO = { id: null, nombre: '', categoria: 'Tracción', descripcion: '' }
 
 // Catálogo de ejercicios (B1). Coach y SuperAdmin dan de alta, editan y desactivan.
 // No se borra: un ejercicio puede estar usado en rutinas, por eso la baja es lógica (activo = false).
+// La descripción la ve el alumno tocando ⓘ en su rutina. No hay video ni progresiones:
+// la técnica y la progresión el coach las enseña en persona.
 export default function CatalogoEjercicios() {
   const [ejercicios, setEjercicios] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -20,7 +22,7 @@ export default function CatalogoEjercicios() {
   const cargar = async () => {
     const { data, error } = await supabase
       .from('ejercicios')
-      .select('id, nombre, categoria, descripcion, video_url, prerrequisito_id, activo')
+      .select('id, nombre, categoria, descripcion, activo')
       .order('nombre')
     if (error) setAviso({ tipo: 'error', texto: mensajeError(error) })
     setEjercicios(data ?? [])
@@ -28,8 +30,6 @@ export default function CatalogoEjercicios() {
   }
 
   useEffect(() => { cargar() }, [])
-
-  const porId = useMemo(() => Object.fromEntries(ejercicios.map((e) => [e.id, e])), [ejercicios])
 
   const visibles = ejercicios.filter(
     (e) =>
@@ -111,18 +111,10 @@ export default function CatalogoEjercicios() {
                   {!e.activo && <span className="text-xs text-neutral-500">Inactivo</span>}
                 </div>
                 {e.descripcion && <p className="mt-0.5 text-sm text-neutral-400">{e.descripcion}</p>}
-                <div className="mt-1 flex flex-wrap gap-x-4 text-xs text-neutral-500">
-                  {e.prerrequisito_id && <span>Viene de: {porId[e.prerrequisito_id]?.nombre ?? '—'}</span>}
-                  {e.video_url && (
-                    <a href={e.video_url} target="_blank" rel="noreferrer" className="underline hover:text-neutral-300">
-                      Ver video
-                    </a>
-                  )}
-                </div>
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setAviso(null); setForm({ ...e, descripcion: e.descripcion ?? '', video_url: e.video_url ?? '', prerrequisito_id: e.prerrequisito_id ?? '' }) }}
+                  onClick={() => { setAviso(null); setForm({ ...e, descripcion: e.descripcion ?? '' }) }}
                   className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
                 >
                   Editar
@@ -142,29 +134,11 @@ export default function CatalogoEjercicios() {
   )
 }
 
-// Ejercicios que dependen (directa o indirectamente) de `id`: no se pueden elegir como su prerrequisito.
-// La base también lo controla (trg_ejercicios_progresion); esto solo evita ofrecer opciones inválidas.
-function descendientes(id, ejercicios) {
-  const resultado = new Set()
-  let frontera = [id]
-  while (frontera.length) {
-    const hijos = ejercicios.filter((e) => frontera.includes(e.prerrequisito_id) && !resultado.has(e.id))
-    hijos.forEach((h) => resultado.add(h.id))
-    frontera = hijos.map((h) => h.id)
-  }
-  return resultado
-}
-
 function FormEjercicio({ inicial, ejercicios, onCancelar, onGuardado }) {
   const [datos, setDatos] = useState(inicial)
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
   const esNuevo = !inicial.id
-
-  const opcionesPrerrequisito = useMemo(() => {
-    const excluidos = esNuevo ? new Set() : descendientes(inicial.id, ejercicios)
-    return ejercicios.filter((e) => e.activo && e.id !== inicial.id && !excluidos.has(e.id))
-  }, [ejercicios, inicial.id, esNuevo])
 
   const campo = (k) => (ev) => setDatos({ ...datos, [k]: ev.target.value })
 
@@ -173,15 +147,10 @@ function FormEjercicio({ inicial, ejercicios, onCancelar, onGuardado }) {
     setError('')
     const nombre = datos.nombre.trim()
     if (!nombre) return setError('El nombre es obligatorio.')
-    const video = datos.video_url.trim()
-    if (video && !/^https?:\/\//i.test(video)) return setError('El link del video tiene que empezar con http:// o https://')
-
     const fila = {
       nombre,
       categoria: datos.categoria,
       descripcion: datos.descripcion.trim() || null,
-      video_url: video || null,
-      prerrequisito_id: datos.prerrequisito_id || null,
     }
     setGuardando(true)
     const { error } = esNuevo
@@ -213,29 +182,10 @@ function FormEjercicio({ inicial, ejercicios, onCancelar, onGuardado }) {
         </label>
       </div>
       <label className="block text-sm">
-        <span className="text-neutral-300">Descripción / indicaciones técnicas</span>
-        <textarea value={datos.descripcion} onChange={campo('descripcion')} rows={2} className={input} />
+        <span className="text-neutral-300">Descripción (la ve el alumno tocando ⓘ en su rutina)</span>
+        <textarea value={datos.descripcion} onChange={campo('descripcion')} rows={3}
+          placeholder="Ej: Desde colgado completo, escápulas activas, mentón sobre la barra." className={input} />
       </label>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-sm">
-          <span className="text-neutral-300">Link de video (opcional)</span>
-          <input value={datos.video_url} onChange={campo('video_url')} placeholder="https://…" className={input} />
-        </label>
-        <label className="block text-sm">
-          <span className="text-neutral-300">Progresión anterior (opcional)</span>
-          <select value={datos.prerrequisito_id} onChange={campo('prerrequisito_id')} className={input}>
-            <option value="">— Ninguna —</option>
-            {CATEGORIAS_EJERCICIO.map((c) => {
-              const grupo = opcionesPrerrequisito.filter((e) => e.categoria === c)
-              return grupo.length ? (
-                <optgroup key={c} label={c}>
-                  {grupo.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-                </optgroup>
-              ) : null
-            })}
-          </select>
-        </label>
-      </div>
       {error && <Aviso tipo="error" texto={error} />}
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancelar} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:text-white">

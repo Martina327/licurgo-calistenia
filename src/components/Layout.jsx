@@ -8,6 +8,7 @@ const MENU = {
     { to: '/recepcion', texto: 'Mostrador', end: true },
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
     { to: '/coach', texto: 'Rutinas', end: true },
+    { to: '/coach/plantillas', texto: 'Plantillas' },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
   ],
   Recepcionista: [
@@ -16,6 +17,7 @@ const MENU = {
   ],
   Coach: [
     { to: '/coach', texto: 'Alumnos y rutinas', end: true },
+    { to: '/coach/plantillas', texto: 'Plantillas' },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
   ],
   Alumno: [

@@ -1,24 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { BLOQUES_EJERCICIO, formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
+import { BLOQUE_CALENTAMIENTO, TEXTO_VAMOS, agruparPorDia, cadenasPorGrupo, nombreCadena, textoDescanso } from '../../lib/rutinas'
 import { alternarMarca, guardarChecklist, leerChecklist } from '../../lib/checklist'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 
-// Filas planas de v_rutina_alumno → días con sus ítems ordenados
-function agruparPorDia(filas) {
-  const dias = new Map()
-  for (const f of filas) {
-    if (!dias.has(f.numero_dia)) dias.set(f.numero_dia, { numero: f.numero_dia, nombre: f.dia, items: [] })
-    if (f.item_id) dias.get(f.numero_dia).items.push(f)
-  }
-  return [...dias.values()]
-    .sort((a, b) => a.numero - b.numero)
-    .map((d) => ({ ...d, items: d.items.sort((a, b) => a.orden - b.orden) }))
-}
-
 // CU11 – El alumno consulta su rutina activa y marca lo que va haciendo en el día.
-// Las observaciones del coach NO se muestran acá: son privadas.
+// En cada ejercicio ve solo: nombre, series × repeticiones, descanso y el tilde.
+// Tocando ⓘ ve la descripción del ejercicio y la observación que le dejó el coach.
+// Las observaciones privadas del coach (lesiones, etc.) NO se muestran: son otra tabla.
 export default function MiRutina() {
   const [filas, setFilas] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -106,36 +97,95 @@ export default function MiRutina() {
           <section key={bloque} className="space-y-2">
             <h2 className="text-sm font-medium uppercase tracking-wide text-neutral-400">{bloque}</h2>
             <ul className="space-y-2">
-              {items.map((it) => {
-                const hecho = check.marcados.includes(it.item_id)
-                return (
-                  <li key={it.item_id}>
-                    <label className={`flex cursor-pointer gap-3 rounded-xl border p-3 ${
-                      hecho ? 'border-emerald-900 bg-emerald-950/40' : 'border-neutral-800 bg-neutral-900'
-                    }`}>
-                      <input type="checkbox" checked={hecho} onChange={() => marcar(it.item_id)} className="mt-1 h-5 w-5 shrink-0 accent-emerald-400" />
-                      <div className="min-w-0 flex-1">
-                        <div className={hecho ? 'text-neutral-400 line-through' : ''}>{it.ejercicio}</div>
-                        <div className="text-sm text-neutral-400">
-                          {it.series} × {it.repeticiones}
-                          {it.descanso_seg != null && ` · descanso ${it.descanso_seg}s`}
-                        </div>
-                        {it.nota && <div className="text-sm text-amber-300">{it.nota}</div>}
-                        {it.video_url && (
-                          <a href={it.video_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-                            className="text-sm text-neutral-400 underline hover:text-white">
-                            Ver video
-                          </a>
-                        )}
-                      </div>
-                    </label>
-                  </li>
-                )
-              })}
+              {cadenasPorGrupo(items).map((c) => (
+                <li key={c[0].item_id}>
+                  {c.length === 1 ? (
+                    <TarjetaEjercicio item={c[0]} hecho={check.marcados.includes(c[0].item_id)} onMarcar={() => marcar(c[0].item_id)} />
+                  ) : (
+                    <BiSerie cadena={c} marcados={check.marcados} onMarcar={marcar} />
+                  )}
+                </li>
+              ))}
             </ul>
           </section>
         )
       })}
+    </div>
+  )
+}
+
+// Bi-serie: ejercicios seguidos sin descanso; se descansa al terminar el último
+function BiSerie({ cadena, marcados, onMarcar }) {
+  const nombres = cadena.map((i) => i.ejercicio)
+  const ultimo = nombres[nombres.length - 1]
+  return (
+    <div className="space-y-2 rounded-2xl border border-violet-700 bg-violet-950/40 p-2">
+      <div className="space-y-1 px-1 pt-1">
+        <span className="rounded-full bg-violet-600 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide text-white">
+          {nombreCadena(cadena.length)}
+        </span>
+        <p className="text-sm text-violet-200">
+          Hacé {nombres.slice(0, -1).join(', ')} y {ultimo} seguidos, sin descanso entre ellos. Descansá recién al terminar {ultimo}.
+        </p>
+      </div>
+      {cadena.map((it, k) => (
+        <TarjetaEjercicio key={it.item_id} item={it} hecho={marcados.includes(it.item_id)} onMarcar={() => onMarcar(it.item_id)}
+          sinDescanso={k < cadena.length - 1} />
+      ))}
+    </div>
+  )
+}
+
+function TarjetaEjercicio({ item: it, hecho, onMarcar, sinDescanso = false }) {
+  const [verInfo, setVerInfo] = useState(false)
+  const tieneInfo = Boolean(it.descripcion || it.nota)
+  const descansoTxt = textoDescanso(it.descanso_seg)
+  // En la entrada en calor, sin descanso cargado no se muestra nada (el ¡VAMOS! es para el trabajo)
+  const ocultarDescanso = !descansoTxt && it.bloque === BLOQUE_CALENTAMIENTO
+
+  return (
+    <div className={`relative rounded-xl border ${hecho ? 'border-emerald-900 bg-emerald-950/40' : 'border-neutral-800 bg-neutral-900'}`}>
+      <label className="flex cursor-pointer gap-3 p-3 pr-12">
+        <input type="checkbox" checked={hecho} onChange={onMarcar} className="mt-1 h-5 w-5 shrink-0 accent-emerald-400" />
+        <div className="min-w-0 flex-1">
+          <div className={`font-medium ${hecho ? 'text-neutral-400 line-through' : ''}`}>{it.ejercicio}</div>
+          <div className="text-sm text-neutral-300">{it.series} × {it.repeticiones}</div>
+          {sinDescanso ? (
+            <div className="text-sm font-medium text-violet-300">Sin descanso → seguí con el siguiente</div>
+          ) : ocultarDescanso ? null : (
+            <div className="text-sm text-neutral-400">
+              {descansoTxt ? `Descanso ${descansoTxt}` : <span className="font-semibold text-amber-300">{TEXTO_VAMOS} 🔔</span>}
+            </div>
+          )}
+        </div>
+      </label>
+
+      {tieneInfo && (
+        <button type="button" onClick={() => setVerInfo((v) => !v)} aria-expanded={verInfo}
+          aria-label={`Información de ${it.ejercicio}`} title="Información"
+          className={`absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border text-sm font-semibold italic ${
+            verInfo ? 'border-white bg-white text-neutral-950' : 'border-neutral-600 text-neutral-300 hover:border-neutral-400'
+          }`}>
+          i
+        </button>
+      )}
+
+      {verInfo && (
+        <div className="space-y-2 border-t border-neutral-800 px-3 py-3 text-sm">
+          {it.descripcion && (
+            <div>
+              <div className="text-xs uppercase tracking-wide text-neutral-500">Descripción</div>
+              <p className="whitespace-pre-line text-neutral-200">{it.descripcion}</p>
+            </div>
+          )}
+          {it.nota && (
+            <div>
+              <div className="text-xs uppercase tracking-wide text-neutral-500">Observación del coach</div>
+              <p className="whitespace-pre-line text-amber-300">{it.nota}</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

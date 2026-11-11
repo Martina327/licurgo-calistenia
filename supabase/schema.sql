@@ -32,7 +32,7 @@ DROP TABLE IF EXISTS
     -- esquema v1 (modulo_coach.sql)
     public.fichas_observaciones, public.item_ejercicio, public.rutina_dia,
     -- esquema v2
-    public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
+    public.rutinas_plantilla, public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
     public.ejercicios, public.invitaciones_retomar, public.asistencias, public.ingresos, public.venta_items,
     public.ventas, public.productos, public.espacios_alquiler, public.turnos_caja,
     public.comprobantes_pago, public.certificados_aptos, public.alumnos,
@@ -51,7 +51,7 @@ DROP FUNCTION IF EXISTS public.fn_set_fecha_actualizacion, public.fn_validar_rol
     public.rechazar_comprobante, public.registrar_pago_efectivo, public.registrar_venta,
     public.registrar_cobro_alquiler, public.abrir_turno, public.cerrar_turno,
     public.justificar_cierre, public.registrar_invitacion, public._crear_usuario_mock,
-    public.fn_validar_progresion, public.guardar_rutina,
+    public.fn_validar_progresion, public.guardar_rutina, public.fn_tocar_plantilla,
     -- Pareja A · A1
     public._plan_unico, public.marcar_clave_cambiada, public.alta_clase_prueba,
     public._alumno_existente, public.editar_alumno, public.dar_baja_alumno,
@@ -386,7 +386,8 @@ CREATE TABLE public.rutina_items (
     series         SMALLINT NOT NULL CHECK (series > 0),
     repeticiones   TEXT NOT NULL,                    -- '8', '30s', '5 c/lado', 'máx'
     descanso_seg   SMALLINT CHECK (descanso_seg >= 0),
-    nota           TEXT,                             -- indicación visible para el alumno
+    nota           TEXT,                             -- observación visible para el alumno (ⓘ)
+    grupo          SMALLINT CHECK (grupo > 0),       -- bi-serie: mismo número = se hacen seguidos sin descanso
     CONSTRAINT uq_orden_por_dia UNIQUE (rutina_dia_id, orden)
 );
 
@@ -782,7 +783,8 @@ END $$;
 -- 14.10 Guardar rutina completa (CU09)  [B1]
 --   p_rutina_id NULL → archiva la rutina activa y crea una nueva (queda historial)
 --   p_rutina_id dado → edita esa rutina activa reemplazando días e ítems
---   p_dias: [{ nombre, items: [{ ejercicio_id, bloque, series, repeticiones, descanso_seg, nota }] }]
+--   p_dias: [{ nombre, items: [{ ejercicio_id, bloque, series, repeticiones, descanso_seg, nota, grupo }] }]
+--   grupo: bi-serie (mismo número dentro del día = seguidos sin descanso; descansa el último)
 --   Día 1..n y orden de ítems (por bloque, luego posición) los calcula la función.
 CREATE FUNCTION public.guardar_rutina(
     p_alumno_id UUID, p_nombre TEXT, p_objetivo TEXT, p_dias JSONB, p_rutina_id UUID DEFAULT NULL)
@@ -846,7 +848,7 @@ BEGIN
         RETURNING id INTO v_dia_id;
 
         INSERT INTO public.rutina_items (rutina_dia_id, ejercicio_id, bloque, orden, series,
-                                         repeticiones, descanso_seg, nota)
+                                         repeticiones, descanso_seg, nota, grupo)
         SELECT v_dia_id,
                (i.value->>'ejercicio_id')::uuid,
                (i.value->>'bloque')::public.bloque_ejercicio,
@@ -854,8 +856,25 @@ BEGIN
                (i.value->>'series')::smallint,
                trim(i.value->>'repeticiones'),
                nullif(i.value->>'descanso_seg', '')::smallint,
-               nullif(trim(i.value->>'nota'), '')
+               nullif(trim(i.value->>'nota'), ''),
+               nullif(i.value->>'grupo', '')::smallint
           FROM jsonb_array_elements(v_dia.dia->'items') WITH ORDINALITY i;
+
+        -- Bi-series: 2+ ejercicios seguidos del mismo bloque con el mismo grupo
+        IF EXISTS (
+            SELECT 1 FROM public.rutina_items
+             WHERE rutina_dia_id = v_dia_id AND grupo IS NOT NULL
+             GROUP BY grupo
+            HAVING count(*) < 2 OR count(DISTINCT bloque) > 1
+                OR max(orden) - min(orden) + 1 <> count(*)
+        ) THEN
+            RAISE EXCEPTION 'BISERIE_INVALIDA: una bi-serie necesita 2 o más ejercicios seguidos del mismo bloque';
+        END IF;
+        -- Dentro de la bi-serie solo el último ejercicio lleva descanso
+        UPDATE public.rutina_items ri SET descanso_seg = NULL
+         WHERE ri.rutina_dia_id = v_dia_id AND ri.grupo IS NOT NULL AND ri.descanso_seg IS NOT NULL
+           AND ri.orden < (SELECT max(x.orden) FROM public.rutina_items x
+                            WHERE x.rutina_dia_id = v_dia_id AND x.grupo = ri.grupo);
     END LOOP;
 
     RETURN v_rutina;
@@ -941,7 +960,8 @@ CREATE VIEW public.v_rutina_alumno WITH (security_invoker = true) AS
 SELECT r.id AS rutina_id, r.alumno_id, r.coach_id, r.nombre AS rutina, r.objetivo,
        r.fecha_actualizacion, d.id AS rutina_dia_id, d.numero_dia, d.nombre AS dia,
        i.id AS item_id, i.bloque, i.orden, e.id AS ejercicio_id, e.nombre AS ejercicio,
-       e.categoria, e.video_url, i.series, i.repeticiones, i.descanso_seg, i.nota
+       e.categoria, e.video_url, i.series, i.repeticiones, i.descanso_seg, i.nota,
+       e.descripcion, i.grupo
   FROM public.rutinas r
   JOIN public.rutina_dias d       ON d.rutina_id = r.id
   LEFT JOIN public.rutina_items i ON i.rutina_dia_id = d.id
@@ -2047,6 +2067,96 @@ END $$;
 
 REVOKE EXECUTE ON FUNCTION public.editar_alumno(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, TEXT, TEXT) FROM PUBLIC, anon;
 GRANT  EXECUTE ON FUNCTION public.editar_alumno(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, TEXT, TEXT) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 19.10 PAREJA B · B1 ITERACIÓN 2: PLANTILLAS DE RUTINA Y CALENTAMIENTO ESTÁNDAR
+--       (migraciones 20261110_01 a 03; la 01 y la 02 tocan secciones 11, 14.10 y 15)
+--     Rutinas preestablecidas que el coach usa como base. tipo 'Calentamiento'
+--     = calentamiento estándar (uno solo activo). `dias` = formato p_dias.
+--     Solo Coach y SuperAdmin.
+-- ---------------------------------------------------------------------
+CREATE TABLE public.rutinas_plantilla (
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tipo                 TEXT NOT NULL DEFAULT 'Rutina' CHECK (tipo IN ('Rutina', 'Calentamiento')),
+    nombre               TEXT NOT NULL CHECK (trim(nombre) <> ''),
+    objetivo             TEXT,
+    dias                 JSONB NOT NULL
+                         CHECK (jsonb_typeof(dias) = 'array' AND jsonb_array_length(dias) BETWEEN 1 AND 7),
+    activa               BOOLEAN NOT NULL DEFAULT TRUE,
+    creada_por           UUID DEFAULT auth.uid() REFERENCES public.usuarios(id) ON DELETE SET NULL,
+    fecha_actualizacion  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX uq_plantilla_nombre
+    ON public.rutinas_plantilla (lower(trim(nombre))) WHERE activa;
+CREATE UNIQUE INDEX uq_un_calentamiento
+    ON public.rutinas_plantilla (tipo) WHERE activa AND tipo = 'Calentamiento';
+
+CREATE FUNCTION public.fn_tocar_plantilla() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN
+    NEW.fecha_actualizacion := now();
+    RETURN NEW;
+END $$;
+CREATE TRIGGER trg_plantillas_fecha BEFORE UPDATE ON public.rutinas_plantilla
+    FOR EACH ROW EXECUTE FUNCTION public.fn_tocar_plantilla();
+
+ALTER TABLE public.rutinas_plantilla ENABLE ROW LEVEL SECURITY;
+CREATE POLICY plantillas_coach ON public.rutinas_plantilla FOR ALL TO authenticated
+    USING (public.mi_rol() IN ('Coach', 'SuperAdmin'))
+    WITH CHECK (public.mi_rol() IN ('Coach', 'SuperAdmin'));
+REVOKE ALL ON public.rutinas_plantilla FROM anon;
+GRANT SELECT, INSERT, UPDATE ON public.rutinas_plantilla TO authenticated;
+REVOKE DELETE ON public.rutinas_plantilla FROM authenticated;   -- baja lógica
+
+
+-- ---------------------------------------------------------------------
+-- Datos iniciales (se pueden editar desde la app: Coach → Plantillas)
+-- ---------------------------------------------------------------------
+
+-- Ejercicios de calentamiento que faltaban en el catálogo
+INSERT INTO public.ejercicios (nombre, categoria, descripcion) VALUES
+  ('Movilidad articular general', 'Movilidad', 'Cuello, hombros, cadera, rodillas y tobillos: círculos suaves en ambos sentidos'),
+  ('Jumping jacks',               'Movilidad', 'Saltos abriendo y cerrando brazos y piernas, ritmo constante'),
+  ('Sentadilla libre',            'Piernas',   'Pies al ancho de hombros, bajar con la espalda recta y talones apoyados')
+ON CONFLICT (nombre) DO NOTHING;
+
+-- Ítem de plantilla a partir del nombre del ejercicio (si no existe queda sin elegir)
+CREATE OR REPLACE FUNCTION pg_temp.it(p_nombre TEXT, p_bloque TEXT, p_series INT, p_reps TEXT,
+                                      p_descanso INT DEFAULT NULL, p_grupo INT DEFAULT NULL, p_nota TEXT DEFAULT NULL)
+RETURNS JSONB LANGUAGE sql AS $$
+    SELECT jsonb_build_object(
+        'ejercicio_id', (SELECT id FROM public.ejercicios WHERE nombre = p_nombre),
+        'bloque', p_bloque, 'series', p_series, 'repeticiones', p_reps,
+        'descanso_seg', p_descanso, 'grupo', p_grupo, 'nota', p_nota)
+$$;
+
+INSERT INTO public.rutinas_plantilla (tipo, nombre, objetivo, dias, creada_por)
+SELECT 'Calentamiento', 'Calentamiento estándar', NULL, jsonb_build_array(jsonb_build_object(
+    'nombre', 'Calentamiento',
+    'items', jsonb_build_array(
+        pg_temp.it('Jumping jacks',                  'Entrada en calor', 2, '30s'),
+        pg_temp.it('Movilidad articular general',    'Entrada en calor', 1, '3 min'),
+        pg_temp.it('Movilidad de hombros y muñecas', 'Entrada en calor', 1, '2 min'),
+        pg_temp.it('Scapular pull-ups',              'Entrada en calor', 2, '10'),
+        pg_temp.it('Sentadilla libre',               'Entrada en calor', 2, '15')))), NULL
+WHERE NOT EXISTS (SELECT 1 FROM public.rutinas_plantilla WHERE tipo = 'Calentamiento' AND activa);
+
+INSERT INTO public.rutinas_plantilla (tipo, nombre, objetivo, dias, creada_por)
+SELECT 'Rutina', 'Fuerza básica', 'Base de fuerza en tracción, empuje y piernas', jsonb_build_array(
+    jsonb_build_object('nombre', 'Tren superior', 'items', jsonb_build_array(
+        pg_temp.it('Dominada asistida con banda', 'Fuerza',     4, '6',   NULL, 1),  -- bi-serie con fondos
+        pg_temp.it('Fondos asistidos con banda',  'Fuerza',     4, '8',   120, 1),
+        pg_temp.it('Remo australiano',            'Fuerza',     3, '10',  90),
+        pg_temp.it('Hollow body hold',            'Accesorios', 3, '30s', 60),
+        pg_temp.it('Plancha lateral',             'Accesorios', 3, '20s', 60, NULL, 'Cada lado'))),
+    jsonb_build_object('nombre', 'Empuje + Piernas', 'items', jsonb_build_array(
+        pg_temp.it('Flexiones',                       'Fuerza',     4, '10'),
+        pg_temp.it('Sentadilla búlgara',              'Fuerza',     3, '8',  90, NULL, 'Cada pierna'),
+        pg_temp.it('Dominada negativa',               'Fuerza',     3, '5',  120),
+        pg_temp.it('Elevaciones de rodillas colgado', 'Accesorios', 3, '10', 60)))), NULL
+WHERE NOT EXISTS (SELECT 1 FROM public.rutinas_plantilla WHERE lower(nombre) = 'fuerza básica' AND activa);
+
 
 
 -- ---------------------------------------------------------------------
