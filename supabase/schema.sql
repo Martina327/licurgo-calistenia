@@ -26,7 +26,7 @@ DROP TRIGGER IF EXISTS trg_nuevo_usuario_auth ON auth.users;
 DROP VIEW IF EXISTS public.v_rutina_activa, public.v_membresias, public.v_alertas,
                     public.v_invitaciones_pendientes,
                     public.v_ingresos_diarios, public.v_concurrencia,
-                    public.v_rutina_alumno CASCADE;
+                    public.v_rutina_alumno, public.v_alumnos_baja CASCADE;
 
 DROP TABLE IF EXISTS
     -- esquema v1 (modulo_coach.sql)
@@ -51,7 +51,11 @@ DROP FUNCTION IF EXISTS public.fn_set_fecha_actualizacion, public.fn_validar_rol
     public.rechazar_comprobante, public.registrar_pago_efectivo, public.registrar_venta,
     public.registrar_cobro_alquiler, public.abrir_turno, public.cerrar_turno,
     public.justificar_cierre, public.registrar_invitacion, public._crear_usuario_mock,
-    public.fn_validar_progresion, public.guardar_rutina CASCADE;
+    public.fn_validar_progresion, public.guardar_rutina,
+    -- Pareja A · A1
+    public._plan_unico, public.marcar_clave_cambiada, public.alta_clase_prueba,
+    public._alumno_existente, public.editar_alumno, public.dar_baja_alumno,
+    public.reactivar_alumno, public._normalizar_email, public._datos_faltantes CASCADE;
 
 -- Usuarios mock de Supabase Auth (por DNI)
 DELETE FROM auth.users
@@ -1405,6 +1409,644 @@ UPDATE public.turnos_caja
 INSERT INTO public.asistencias (alumno_id, registrado_por, fecha_hora, fecha) VALUES
   ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000002', now() - interval '1 day 2 hours', public.hoy_ar() - 1),
   ('20000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002', now() - interval '1 day 1 hour',  public.hoy_ar() - 1);
+
+
+-- ---------------------------------------------------------------------
+-- 19.9 PAREJA A · A1 GESTIONAR ALUMNOS (migraciones 20261107_01 a 03)
+--      Plan único, alta de clase de prueba, cambio de clave obligatorio,
+--      edición, baja lógica, reactivación y ficha completa al pagar.
+--      Va después del seed porque deja una sola fila en planes.
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  A1 · Gestionar alumnos (CU01, RF01) · Pareja A
+--  Plan único · alta rápida de clase de prueba · cambio de clave obligatorio
+--
+--  Correr en el SQL Editor de Supabase sobre la base que ya tiene
+--  las migraciones 20261102_01 a 04. Es re-ejecutable.
+--
+--  Decisiones del equipo (01/11/2026):
+--    · Un solo plan mensual. La tabla planes queda con una fila para que
+--      el SuperAdmin pueda cambiar el precio.
+--    · En la clase de prueba se piden nombre, DNI y celular. El alumno
+--      queda "En clase de prueba" hasta que paga la primera cuota.
+--    · El alumno entra con su DNI y está obligado a cambiar la clave en
+--      el primer ingreso (la clave inicial es su DNI).
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- 1. Plan único
+--    Se conserva el plan a0000000-...-0001 (lo usa el seed) y se lo
+--    renombra. Todos los alumnos quedan con ese plan y se borran los demás.
+--    Precio actual de la cuota: $60.000 (después lo cambia el SuperAdmin).
+-- ---------------------------------------------------------------------
+INSERT INTO public.planes (id, nombre, precio, dias_por_semana)
+VALUES ('a0000000-0000-0000-0000-000000000001', 'Plan mensual', 60000, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+UPDATE public.planes
+   SET nombre = 'Plan mensual', precio = 60000, dias_por_semana = NULL, activo = TRUE
+ WHERE id = 'a0000000-0000-0000-0000-000000000001';
+
+UPDATE public.alumnos
+   SET plan_id = 'a0000000-0000-0000-0000-000000000001'
+ WHERE plan_id IS DISTINCT FROM 'a0000000-0000-0000-0000-000000000001';
+
+DELETE FROM public.planes
+ WHERE id <> 'a0000000-0000-0000-0000-000000000001';
+
+-- Devuelve el id del plan único (para no repetir el UUID en las funciones)
+CREATE OR REPLACE FUNCTION public._plan_unico() RETURNS UUID
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+    SELECT id FROM public.planes WHERE activo ORDER BY nombre LIMIT 1
+$$;
+REVOKE EXECUTE ON FUNCTION public._plan_unico() FROM PUBLIC, anon, authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 2. Cambio de clave obligatorio en el primer ingreso
+--    El front lee esta marca al iniciar sesión y, si está en TRUE,
+--    manda al alumno a la pantalla de cambio de clave.
+-- ---------------------------------------------------------------------
+ALTER TABLE public.usuarios
+    ADD COLUMN IF NOT EXISTS debe_cambiar_clave BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- El usuario la apaga después de cambiar su clave (solo la suya)
+CREATE OR REPLACE FUNCTION public.marcar_clave_cambiada()
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'PERMISO_DENEGADO: sesión requerida' USING ERRCODE = '42501';
+    END IF;
+    UPDATE public.usuarios SET debe_cambiar_clave = FALSE WHERE id = auth.uid();
+END $$;
+REVOKE EXECUTE ON FUNCTION public.marcar_clave_cambiada() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.marcar_clave_cambiada() TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 3. Alta rápida de clase de prueba (CU01)
+--    Solo Recepción / SuperAdmin. Crea la cuenta en Supabase Auth
+--    (el trigger fn_nuevo_usuario_auth crea usuarios + alumnos) y
+--    devuelve el id del alumno nuevo.
+--      · login:  DNI (email interno <dni>@licurgo.test)
+--      · clave:  el DNI, con cambio obligatorio en el primer ingreso
+--      · estado: En clase de prueba (fecha_vencimiento NULL)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.alta_clase_prueba(
+    p_dni      TEXT,
+    p_nombre   TEXT,
+    p_apellido TEXT,
+    p_telefono TEXT
+)
+RETURNS UUID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions, auth AS $$
+DECLARE
+    v_dni      TEXT := trim(coalesce(p_dni, ''));
+    v_nombre   TEXT := trim(coalesce(p_nombre, ''));
+    v_apellido TEXT := trim(coalesce(p_apellido, ''));
+    v_telefono TEXT := regexp_replace(coalesce(p_telefono, ''), '\D', '', 'g');
+    v_email    TEXT;
+    v_id       UUID := gen_random_uuid();
+    v_activo   BOOLEAN;
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+
+    IF v_dni !~ '^[0-9]{7,8}$' THEN
+        RAISE EXCEPTION 'DNI_INVALIDO: %', v_dni;
+    END IF;
+    IF v_nombre = '' OR v_apellido = '' THEN
+        RAISE EXCEPTION 'DATOS_REQUERIDOS: nombre y apellido';
+    END IF;
+    IF length(v_telefono) < 10 THEN
+        RAISE EXCEPTION 'CELULAR_INVALIDO: %', p_telefono;
+    END IF;
+
+    -- DNI repetido: distinguimos si la persona fue dada de baja
+    SELECT activo INTO v_activo FROM public.usuarios WHERE dni = v_dni;
+    IF FOUND THEN
+        IF v_activo THEN
+            RAISE EXCEPTION 'DNI_EXISTENTE: %', v_dni;
+        ELSE
+            RAISE EXCEPTION 'DNI_DADO_DE_BAJA: %', v_dni;
+        END IF;
+    END IF;
+
+    v_email := v_dni || '@licurgo.test';
+    IF EXISTS (SELECT 1 FROM auth.users WHERE email = v_email) THEN
+        RAISE EXCEPTION 'DNI_EXISTENTE: %', v_dni;
+    END IF;
+
+    INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password,
+                            email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+                            created_at, updated_at, confirmation_token, email_change,
+                            email_change_token_new, recovery_token, email_change_token_current,
+                            phone_change, phone_change_token, reauthentication_token)
+    VALUES ('00000000-0000-0000-0000-000000000000', v_id, 'authenticated', 'authenticated',
+            v_email, extensions.crypt(v_dni, extensions.gen_salt('bf')), now(),
+            jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email'),
+                               'rol', 'Alumno'),
+            jsonb_build_object('dni', v_dni, 'nombre', v_nombre, 'apellido', v_apellido,
+                               'telefono', v_telefono, 'plan_id', public._plan_unico()),
+            now(), now(), '', '', '', '', '', '', '', '');
+
+    INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider,
+                                 last_sign_in_at, created_at, updated_at)
+    VALUES (gen_random_uuid(), v_id, v_id::text,
+            jsonb_build_object('sub', v_id::text, 'email', v_email, 'email_verified', true),
+            'email', NULL, now(), now());
+
+    -- El trigger ya creó usuarios + alumnos: marcamos el cambio de clave obligatorio
+    UPDATE public.usuarios SET debe_cambiar_clave = TRUE WHERE id = v_id;
+
+    RETURN v_id;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.alta_clase_prueba(TEXT, TEXT, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.alta_clase_prueba(TEXT, TEXT, TEXT, TEXT) TO authenticated;
+
+
+-- =====================================================================
+--  A1 · Gestionar alumnos (CU01, RF01) · Pareja A
+--  Edición, baja lógica y reactivación de alumnos
+--
+--  Correr en el SQL Editor de Supabase DESPUÉS de 20261107_01.
+--  Es re-ejecutable.
+--
+--  Todo pasa por funciones (como el cobro o el check-in) para que nadie
+--  pueda cambiar a mano el DNI, el rol o la marca de activo desde el front:
+--    · editar_alumno     → datos personales y DNI (si cambia el DNI,
+--                          también cambia el usuario con el que entra)
+--    · dar_baja_alumno   → baja lógica: activo = false. No se borra nada,
+--                          porque tiene pagos y asistencias asociados.
+--                          Ya no puede entrar a la app (AuthContext lo saca).
+--    · reactivar_alumno  → vuelve a activo = true
+--    · v_alumnos_baja    → listado de dados de baja (v_membresias solo
+--                          muestra activos)
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- 1. Proteger la tabla usuarios
+--    Las políticas RLS ya limitaban QUIÉN edita; esto limita QUÉ se edita.
+--    Desde el front no se puede tocar ninguna columna: se usan las funciones.
+-- ---------------------------------------------------------------------
+REVOKE UPDATE ON public.usuarios FROM anon, authenticated;
+
+
+-- Valida que el id corresponda a un alumno (activo o no) y devuelve su DNI
+CREATE OR REPLACE FUNCTION public._alumno_existente(p_alumno_id UUID) RETURNS TEXT
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_dni TEXT;
+BEGIN
+    SELECT u.dni INTO v_dni
+      FROM public.usuarios u JOIN public.alumnos a ON a.usuario_id = u.id
+     WHERE u.id = p_alumno_id AND u.rol = 'Alumno';
+    IF v_dni IS NULL THEN
+        RAISE EXCEPTION 'ALUMNO_INEXISTENTE: %', p_alumno_id;
+    END IF;
+    RETURN v_dni;
+END $$;
+REVOKE EXECUTE ON FUNCTION public._alumno_existente(UUID) FROM PUBLIC, anon, authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 2. Editar alumno (CU01 · modificación)
+--    Nombre, apellido y DNI son obligatorios; el resto puede ir vacío.
+--    Si cambia el DNI se actualiza también el email interno de login.
+--    La clave NO cambia: si el alumno todavía tenía el DNI viejo como
+--    clave, la sigue usando hasta que la cambie.
+-- ---------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.editar_alumno(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, TEXT);
+
+CREATE FUNCTION public.editar_alumno(
+    p_alumno_id           UUID,
+    p_dni                 TEXT,
+    p_nombre              TEXT,
+    p_apellido            TEXT,
+    p_telefono            TEXT,
+    p_email_contacto      TEXT DEFAULT NULL,
+    p_fecha_nacimiento    DATE DEFAULT NULL,
+    p_contacto_emergencia TEXT DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth AS $$
+DECLARE
+    v_dni_actual TEXT;
+    v_dni        TEXT := regexp_replace(coalesce(p_dni, ''), '[.\s]', '', 'g');
+    v_nombre     TEXT := trim(coalesce(p_nombre, ''));
+    v_apellido   TEXT := trim(coalesce(p_apellido, ''));
+    v_telefono   TEXT := regexp_replace(coalesce(p_telefono, ''), '\D', '', 'g');
+    v_email      TEXT := nullif(lower(trim(coalesce(p_email_contacto, ''))), '');
+    v_email_login TEXT;
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+    v_dni_actual := public._alumno_existente(p_alumno_id);
+
+    IF v_dni !~ '^[0-9]{7,8}$' THEN
+        RAISE EXCEPTION 'DNI_INVALIDO: %', v_dni;
+    END IF;
+    IF v_nombre = '' OR v_apellido = '' THEN
+        RAISE EXCEPTION 'DATOS_REQUERIDOS: nombre y apellido';
+    END IF;
+    IF length(v_telefono) < 10 THEN
+        RAISE EXCEPTION 'CELULAR_INVALIDO: %', p_telefono;
+    END IF;
+    IF v_email IS NOT NULL AND v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' THEN
+        RAISE EXCEPTION 'EMAIL_INVALIDO: %', v_email;
+    END IF;
+    IF p_fecha_nacimiento IS NOT NULL
+       AND (p_fecha_nacimiento > public.hoy_ar() OR p_fecha_nacimiento < DATE '1900-01-01') THEN
+        RAISE EXCEPTION 'FECHA_NACIMIENTO_INVALIDA: %', p_fecha_nacimiento;
+    END IF;
+
+    -- Cambio de DNI: tiene que ser único y se mueve también el login
+    IF v_dni <> v_dni_actual THEN
+        IF EXISTS (SELECT 1 FROM public.usuarios WHERE dni = v_dni) THEN
+            RAISE EXCEPTION 'DNI_EXISTENTE: %', v_dni;
+        END IF;
+        v_email_login := v_dni || '@licurgo.test';
+        IF EXISTS (SELECT 1 FROM auth.users WHERE email = v_email_login) THEN
+            RAISE EXCEPTION 'DNI_EXISTENTE: %', v_dni;
+        END IF;
+
+        UPDATE auth.users
+           SET email = v_email_login,
+               raw_user_meta_data = raw_user_meta_data || jsonb_build_object('dni', v_dni),
+               updated_at = now()
+         WHERE id = p_alumno_id;
+        UPDATE auth.identities
+           SET identity_data = identity_data || jsonb_build_object('email', v_email_login),
+               updated_at = now()
+         WHERE user_id = p_alumno_id AND provider = 'email';
+    END IF;
+
+    UPDATE public.usuarios
+       SET dni = v_dni, nombre = v_nombre, apellido = v_apellido,
+           telefono = v_telefono, email_contacto = v_email
+     WHERE id = p_alumno_id;
+
+    UPDATE public.alumnos
+       SET fecha_nacimiento    = p_fecha_nacimiento,
+           contacto_emergencia = nullif(trim(coalesce(p_contacto_emergencia, '')), '')
+     WHERE usuario_id = p_alumno_id;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.editar_alumno(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, TEXT) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.editar_alumno(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, TEXT) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 3. Baja lógica y reactivación
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.dar_baja_alumno(p_alumno_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+    PERFORM public._alumno_existente(p_alumno_id);
+    UPDATE public.usuarios SET activo = FALSE WHERE id = p_alumno_id;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.reactivar_alumno(p_alumno_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+    PERFORM public._alumno_existente(p_alumno_id);
+    UPDATE public.usuarios SET activo = TRUE WHERE id = p_alumno_id;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.dar_baja_alumno(UUID), public.reactivar_alumno(UUID) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.dar_baja_alumno(UUID), public.reactivar_alumno(UUID) TO authenticated;
+
+
+-- Dados de baja (v_membresias filtra WHERE u.activo)
+CREATE OR REPLACE VIEW public.v_alumnos_baja WITH (security_invoker = true) AS
+SELECT u.id AS alumno_id, u.dni, u.nombre, u.apellido, u.telefono,
+       a.fecha_vencimiento, a.fecha_alta
+  FROM public.usuarios u
+  JOIN public.alumnos a ON a.usuario_id = u.id
+ WHERE NOT u.activo
+   AND public.mi_rol() IN ('Recepcionista', 'SuperAdmin');
+
+GRANT SELECT ON public.v_alumnos_baja TO authenticated;
+
+
+-- =====================================================================
+--  A1 · Gestionar alumnos (CU01, RF01) · Pareja A
+--  Datos obligatorios en la clase de prueba y ficha completa al pagar
+--
+--  Correr en el SQL Editor de Supabase DESPUÉS de 20261107_02.
+--  Es re-ejecutable.
+--
+--  Decisión del equipo (07/11/2026):
+--    · Clase de prueba: nombre, apellido, DNI, celular y EMAIL, todos
+--      obligatorios. Sirven para contactar a quien no vuelve (invitación
+--      a retomar y, más adelante, promociones).
+--    · Al pagar la primera cuota la ficha tiene que estar completa:
+--      fecha de nacimiento, domicilio y contacto de emergencia.
+--      La regla vive en _extender_membresia, así vale igual para el pago
+--      en efectivo (A2) y para la transferencia aprobada (CU08).
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- 1. Domicilio
+-- ---------------------------------------------------------------------
+ALTER TABLE public.alumnos ADD COLUMN IF NOT EXISTS domicilio TEXT;
+GRANT UPDATE (domicilio) ON public.alumnos TO authenticated;
+
+
+-- Email con formato válido (devuelve el email normalizado o NULL si viene vacío)
+CREATE OR REPLACE FUNCTION public._normalizar_email(p_email TEXT) RETURNS TEXT
+LANGUAGE plpgsql IMMUTABLE SET search_path = '' AS $$
+DECLARE v_email TEXT := nullif(lower(trim(coalesce(p_email, ''))), '');
+BEGIN
+    IF v_email IS NOT NULL AND v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' THEN
+        RAISE EXCEPTION 'EMAIL_INVALIDO: %', v_email;
+    END IF;
+    RETURN v_email;
+END $$;
+REVOKE EXECUTE ON FUNCTION public._normalizar_email(TEXT) FROM PUBLIC, anon, authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 2. Ficha completa
+--    Qué le falta a un alumno para poder pagar la primera cuota.
+--    Devuelve un arreglo vacío si no le falta nada.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public._datos_faltantes(p_alumno_id UUID) RETURNS TEXT[]
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+    SELECT array_remove(ARRAY[
+        CASE WHEN u.email_contacto IS NULL                         THEN 'email' END,
+        CASE WHEN a.fecha_nacimiento IS NULL                       THEN 'fecha de nacimiento' END,
+        CASE WHEN coalesce(trim(a.domicilio), '') = ''             THEN 'domicilio' END,
+        CASE WHEN coalesce(trim(a.contacto_emergencia), '') = ''   THEN 'contacto de emergencia' END
+    ], NULL)
+      FROM public.usuarios u JOIN public.alumnos a ON a.usuario_id = u.id
+     WHERE u.id = p_alumno_id
+$$;
+REVOKE EXECUTE ON FUNCTION public._datos_faltantes(UUID) FROM PUBLIC, anon, authenticated;
+
+
+-- _extender_membresia (dueño: Pareja A · la usa también CU08)
+-- Misma lógica de siempre (+30 días al vencimiento actual), con un control
+-- nuevo: en el PRIMER pago (vencimiento NULL) la ficha tiene que estar completa.
+CREATE OR REPLACE FUNCTION public._extender_membresia(p_alumno_id UUID) RETURNS date
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_actual    date;
+    v_faltantes TEXT[];
+    v_nuevo     date;
+BEGIN
+    SELECT fecha_vencimiento INTO v_actual FROM public.alumnos WHERE usuario_id = p_alumno_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ALUMNO_INEXISTENTE: %', p_alumno_id;
+    END IF;
+
+    IF v_actual IS NULL THEN
+        v_faltantes := public._datos_faltantes(p_alumno_id);
+        IF cardinality(v_faltantes) > 0 THEN
+            RAISE EXCEPTION 'FICHA_INCOMPLETA: %', array_to_string(v_faltantes, ', ');
+        END IF;
+    END IF;
+
+    UPDATE public.alumnos
+       SET fecha_vencimiento = coalesce(fecha_vencimiento, public.hoy_ar()) + 30
+     WHERE usuario_id = p_alumno_id
+    RETURNING fecha_vencimiento INTO v_nuevo;
+    RETURN v_nuevo;
+END $$;
+
+
+-- ---------------------------------------------------------------------
+-- 3. v_membresias: columnas nuevas AL FINAL (no cambia lo que ya usa B)
+--      email, domicilio y datos_faltantes
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW public.v_membresias WITH (security_invoker = true) AS
+SELECT
+    u.id                                       AS alumno_id,
+    u.dni, u.nombre, u.apellido, u.telefono,
+    p.id                                       AS plan_id,
+    p.nombre                                   AS plan,
+    p.precio                                   AS precio_plan,
+    a.fecha_vencimiento,
+    a.fecha_vencimiento - public.hoy_ar()      AS dias_restantes,
+    CASE
+        WHEN a.fecha_vencimiento IS NULL                     THEN 'Sin membresía'
+        WHEN a.fecha_vencimiento <  public.hoy_ar()          THEN 'Vencida'
+        WHEN a.fecha_vencimiento <= public.hoy_ar() + 3      THEN 'Por vencer'
+        ELSE 'Al día'
+    END                                        AS estado_membresia,
+    c.fecha_vencimiento                        AS certificado_vencimiento,
+    CASE
+        WHEN c.fecha_vencimiento IS NULL                     THEN 'Sin certificado'
+        WHEN c.fecha_vencimiento <  public.hoy_ar()          THEN 'Vencido'
+        WHEN c.fecha_vencimiento <= public.hoy_ar() + 15     THEN 'Por vencer'
+        ELSE 'Vigente'
+    END                                        AS estado_certificado,
+    CASE
+        WHEN a.fecha_vencimiento IS NULL                     THEN 'En clase de prueba'
+        WHEN a.fecha_vencimiento <  public.hoy_ar() - 30     THEN 'Inactivo'
+        ELSE 'Activo'
+    END                                        AS estado_alumno,
+    a.fecha_clase_prueba,
+    u.email_contacto                           AS email,
+    a.domicilio,
+    array_remove(ARRAY[
+        CASE WHEN u.email_contacto IS NULL                       THEN 'email' END,
+        CASE WHEN a.fecha_nacimiento IS NULL                     THEN 'fecha de nacimiento' END,
+        CASE WHEN coalesce(trim(a.domicilio), '') = ''           THEN 'domicilio' END,
+        CASE WHEN coalesce(trim(a.contacto_emergencia), '') = '' THEN 'contacto de emergencia' END
+    ], NULL)                                   AS datos_faltantes
+FROM public.usuarios u
+JOIN public.alumnos a        ON a.usuario_id = u.id
+LEFT JOIN public.planes p    ON p.id = a.plan_id
+LEFT JOIN LATERAL (
+    SELECT ca.fecha_vencimiento FROM public.certificados_aptos ca
+     WHERE ca.alumno_id = u.id ORDER BY ca.fecha_vencimiento DESC LIMIT 1
+) c ON TRUE
+WHERE u.activo;
+
+
+-- ---------------------------------------------------------------------
+-- 4. Alta de clase de prueba: ahora con EMAIL obligatorio
+--    (reemplaza a la versión de 4 parámetros de la migración 01)
+-- ---------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.alta_clase_prueba(TEXT, TEXT, TEXT, TEXT);
+
+CREATE OR REPLACE FUNCTION public.alta_clase_prueba(
+    p_dni      TEXT,
+    p_nombre   TEXT,
+    p_apellido TEXT,
+    p_telefono TEXT,
+    p_email    TEXT
+)
+RETURNS UUID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions, auth AS $$
+DECLARE
+    v_dni      TEXT := regexp_replace(coalesce(p_dni, ''), '[.\s]', '', 'g');
+    v_nombre   TEXT := trim(coalesce(p_nombre, ''));
+    v_apellido TEXT := trim(coalesce(p_apellido, ''));
+    v_telefono TEXT := regexp_replace(coalesce(p_telefono, ''), '\D', '', 'g');
+    v_email    TEXT := public._normalizar_email(p_email);
+    v_login    TEXT;
+    v_id       UUID := gen_random_uuid();
+    v_activo   BOOLEAN;
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+
+    IF v_dni !~ '^[0-9]{7,8}$' THEN
+        RAISE EXCEPTION 'DNI_INVALIDO: %', v_dni;
+    END IF;
+    IF v_nombre = '' OR v_apellido = '' THEN
+        RAISE EXCEPTION 'DATOS_REQUERIDOS: nombre y apellido';
+    END IF;
+    IF length(v_telefono) < 10 THEN
+        RAISE EXCEPTION 'CELULAR_INVALIDO: %', p_telefono;
+    END IF;
+    IF v_email IS NULL THEN
+        RAISE EXCEPTION 'EMAIL_REQUERIDO';
+    END IF;
+
+    SELECT activo INTO v_activo FROM public.usuarios WHERE dni = v_dni;
+    IF FOUND THEN
+        IF v_activo THEN
+            RAISE EXCEPTION 'DNI_EXISTENTE: %', v_dni;
+        ELSE
+            RAISE EXCEPTION 'DNI_DADO_DE_BAJA: %', v_dni;
+        END IF;
+    END IF;
+
+    v_login := v_dni || '@licurgo.test';
+    IF EXISTS (SELECT 1 FROM auth.users WHERE email = v_login) THEN
+        RAISE EXCEPTION 'DNI_EXISTENTE: %', v_dni;
+    END IF;
+
+    INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password,
+                            email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+                            created_at, updated_at, confirmation_token, email_change,
+                            email_change_token_new, recovery_token, email_change_token_current,
+                            phone_change, phone_change_token, reauthentication_token)
+    VALUES ('00000000-0000-0000-0000-000000000000', v_id, 'authenticated', 'authenticated',
+            v_login, extensions.crypt(v_dni, extensions.gen_salt('bf')), now(),
+            jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email'),
+                               'rol', 'Alumno'),
+            jsonb_build_object('dni', v_dni, 'nombre', v_nombre, 'apellido', v_apellido,
+                               'telefono', v_telefono, 'email_contacto', v_email,
+                               'plan_id', public._plan_unico()),
+            now(), now(), '', '', '', '', '', '', '', '');
+
+    INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider,
+                                 last_sign_in_at, created_at, updated_at)
+    VALUES (gen_random_uuid(), v_id, v_id::text,
+            jsonb_build_object('sub', v_id::text, 'email', v_login, 'email_verified', true),
+            'email', NULL, now(), now());
+
+    UPDATE public.usuarios SET debe_cambiar_clave = TRUE WHERE id = v_id;
+    RETURN v_id;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.alta_clase_prueba(TEXT, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.alta_clase_prueba(TEXT, TEXT, TEXT, TEXT, TEXT) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 5. Editar alumno: suma domicilio y aplica las reglas nuevas
+--      · email obligatorio para todos
+--      · si ya pagó alguna vez, la ficha tiene que quedar completa
+--      · si está en clase de prueba, la ficha se puede ir completando
+--    (reemplaza a la versión de 8 parámetros de la migración 02)
+-- ---------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.editar_alumno(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, TEXT);
+
+CREATE OR REPLACE FUNCTION public.editar_alumno(
+    p_alumno_id           UUID,
+    p_dni                 TEXT,
+    p_nombre              TEXT,
+    p_apellido            TEXT,
+    p_telefono            TEXT,
+    p_email_contacto      TEXT,
+    p_fecha_nacimiento    DATE DEFAULT NULL,
+    p_domicilio           TEXT DEFAULT NULL,
+    p_contacto_emergencia TEXT DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth AS $$
+DECLARE
+    v_dni_actual  TEXT;
+    v_dni         TEXT := regexp_replace(coalesce(p_dni, ''), '[.\s]', '', 'g');
+    v_nombre      TEXT := trim(coalesce(p_nombre, ''));
+    v_apellido    TEXT := trim(coalesce(p_apellido, ''));
+    v_telefono    TEXT := regexp_replace(coalesce(p_telefono, ''), '\D', '', 'g');
+    v_email       TEXT := public._normalizar_email(p_email_contacto);
+    v_domicilio   TEXT := nullif(trim(coalesce(p_domicilio, '')), '');
+    v_emergencia  TEXT := nullif(trim(coalesce(p_contacto_emergencia, '')), '');
+    v_ya_pago     BOOLEAN;
+    v_login       TEXT;
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+    v_dni_actual := public._alumno_existente(p_alumno_id);
+
+    IF v_dni !~ '^[0-9]{7,8}$' THEN
+        RAISE EXCEPTION 'DNI_INVALIDO: %', v_dni;
+    END IF;
+    IF v_nombre = '' OR v_apellido = '' THEN
+        RAISE EXCEPTION 'DATOS_REQUERIDOS: nombre y apellido';
+    END IF;
+    IF length(v_telefono) < 10 THEN
+        RAISE EXCEPTION 'CELULAR_INVALIDO: %', p_telefono;
+    END IF;
+    IF v_email IS NULL THEN
+        RAISE EXCEPTION 'EMAIL_REQUERIDO';
+    END IF;
+    IF p_fecha_nacimiento IS NOT NULL
+       AND (p_fecha_nacimiento > public.hoy_ar() OR p_fecha_nacimiento < DATE '1900-01-01') THEN
+        RAISE EXCEPTION 'FECHA_NACIMIENTO_INVALIDA: %', p_fecha_nacimiento;
+    END IF;
+
+    SELECT fecha_vencimiento IS NOT NULL INTO v_ya_pago
+      FROM public.alumnos WHERE usuario_id = p_alumno_id;
+    IF v_ya_pago AND (p_fecha_nacimiento IS NULL OR v_domicilio IS NULL OR v_emergencia IS NULL) THEN
+        RAISE EXCEPTION 'FICHA_INCOMPLETA: fecha de nacimiento, domicilio y contacto de emergencia';
+    END IF;
+
+    IF v_dni <> v_dni_actual THEN
+        IF EXISTS (SELECT 1 FROM public.usuarios WHERE dni = v_dni) THEN
+            RAISE EXCEPTION 'DNI_EXISTENTE: %', v_dni;
+        END IF;
+        v_login := v_dni || '@licurgo.test';
+        IF EXISTS (SELECT 1 FROM auth.users WHERE email = v_login) THEN
+            RAISE EXCEPTION 'DNI_EXISTENTE: %', v_dni;
+        END IF;
+        UPDATE auth.users
+           SET email = v_login,
+               raw_user_meta_data = raw_user_meta_data || jsonb_build_object('dni', v_dni),
+               updated_at = now()
+         WHERE id = p_alumno_id;
+        UPDATE auth.identities
+           SET identity_data = identity_data || jsonb_build_object('email', v_login),
+               updated_at = now()
+         WHERE user_id = p_alumno_id AND provider = 'email';
+    END IF;
+
+    UPDATE public.usuarios
+       SET dni = v_dni, nombre = v_nombre, apellido = v_apellido,
+           telefono = v_telefono, email_contacto = v_email
+     WHERE id = p_alumno_id;
+
+    UPDATE public.alumnos
+       SET fecha_nacimiento    = p_fecha_nacimiento,
+           domicilio           = v_domicilio,
+           contacto_emergencia = v_emergencia
+     WHERE usuario_id = p_alumno_id;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.editar_alumno(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.editar_alumno(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, DATE, TEXT, TEXT) TO authenticated;
 
 
 -- ---------------------------------------------------------------------

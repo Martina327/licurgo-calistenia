@@ -5,11 +5,15 @@ import { useAuth } from '../context/AuthContext'
 const MENU = {
   SuperAdmin: [
     { to: '/admin', texto: 'Ingresos' },
-    { to: '/recepcion', texto: 'Mostrador' },
+    { to: '/recepcion', texto: 'Mostrador', end: true },
+    { to: '/recepcion/alumnos', texto: 'Alumnos' },
     { to: '/coach', texto: 'Rutinas', end: true },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
   ],
-  Recepcionista: [{ to: '/recepcion', texto: 'Mostrador' }],
+  Recepcionista: [
+    { to: '/recepcion', texto: 'Mostrador', end: true },
+    { to: '/recepcion/alumnos', texto: 'Alumnos' },
+  ],
   Coach: [
     { to: '/coach', texto: 'Alumnos y rutinas', end: true },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },

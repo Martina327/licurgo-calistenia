@@ -1,0 +1,35 @@
+digraph EstadosAlumno {
+  graph [rankdir=TB, compound=true, fontname="Helvetica", fontsize=20, bgcolor="white", pad=0.4, nodesep=0.9, ranksep=0.7,
+         label="Diagrama de estados del alumno · CU01\n ", labelloc=t];
+  node  [fontname="Helvetica", fontsize=13, shape=box, style="rounded,filled", fillcolor="#F4F4F5", color="#3F3F46", penwidth=1.4, margin="0.3,0.15", width=2.6];
+  edge  [fontname="Helvetica", fontsize=11, color="#3F3F46", fontcolor="#18181B", penwidth=1.2];
+
+  inicio [shape=circle, label="", width=0.25, fixedsize=true, style=filled, fillcolor="#18181B", color="#18181B"];
+
+  subgraph cluster_habilitado {
+    label="Habilitado en el sistema"; labeljust=l; fontsize=12; fontcolor="#52525B";
+    style="rounded,dashed"; color="#A1A1AA"; margin=22;
+
+    prueba   [label="En clase de prueba\n(todavía no pagó)", fillcolor="#E0F2FE", color="#0369A1"];
+    activo   [label="Activo\nCuota: Al día · Por vencer · Vencida", fillcolor="#DCFCE7", color="#15803D"];
+    inactivo [label="Inactivo\n(cuota vencida hace más de 30 días)", fillcolor="#F4F4F5", color="#71717A"];
+  }
+
+  baja [label="Dado de baja\n(baja lógica: no ingresa a la app,\nse conserva su historial)", fillcolor="#FEE2E2", color="#B91C1C"];
+
+  nota [shape=note, fillcolor="#FEF9C3", color="#A16207", fontsize=11, width=0, margin="0.2,0.12",
+        label="Invitación a retomar (WhatsApp manual)\n· clase de prueba hace 7 días o más sin pagar\n· alumnos inactivos\nNo cambia el estado del alumno."];
+
+  inicio  -> prueba   [label="  Recepción registra la clase de prueba\n  (nombre, apellido, DNI, celular, email)"];
+  prueba  -> activo   [label="  Paga la 1.ª cuota\n  [ficha completa: nacimiento,\n  domicilio, contacto de emergencia]"];
+  activo  -> activo   [label="  Paga cuota\n  (+30 días)", headport=e, tailport=e];
+  activo  -> inactivo [label="  Pasan 30 días\n  desde el vencimiento"];
+  inactivo:e -> activo:se [label="  Paga cuota", constraint=false];
+
+  inactivo -> baja [ltail=cluster_habilitado, label="  Dar de baja\n  (desde cualquier estado)"];
+  baja -> inactivo [lhead=cluster_habilitado, label="Reactivar\n(vuelve al estado\nque indica su cuota)  ", style=dashed, color="#B91C1C", fontcolor="#B91C1C"];
+
+  nota -> prueba   [style=dotted, arrowhead=none, color="#A16207", constraint=false];
+  nota -> inactivo [style=dotted, arrowhead=none, color="#A16207", constraint=false];
+  inicio -> nota [style=invis];
+}

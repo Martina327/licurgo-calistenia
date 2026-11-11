@@ -35,7 +35,7 @@ export function AuthProvider({ children }) {
     setCargando(true)
     supabase
       .from('usuarios')
-      .select('id, dni, nombre, apellido, rol, activo')
+      .select('id, dni, nombre, apellido, rol, activo, debe_cambiar_clave')
       .eq('id', userId)
       .single()
       .then(({ data, error }) => {
@@ -59,8 +59,19 @@ export function AuthProvider({ children }) {
 
   const cerrarSesion = () => supabase.auth.signOut()
 
+  // Cambio de clave (obligatorio en el primer ingreso del alumno, CU02).
+  // 1) cambia la clave en Supabase Auth  2) apaga la marca debe_cambiar_clave
+  const cambiarClave = async (nueva) => {
+    const { error } = await supabase.auth.updateUser({ password: nueva })
+    if (error) return { error }
+    const { error: errorMarca } = await supabase.rpc('marcar_clave_cambiada')
+    if (errorMarca) return { error: errorMarca }
+    setPerfil((p) => (p ? { ...p, debe_cambiar_clave: false } : p))
+    return { error: null }
+  }
+
   return (
-    <AuthContext.Provider value={{ session, perfil, cargando, iniciarSesion, cerrarSesion }}>
+    <AuthContext.Provider value={{ session, perfil, cargando, iniciarSesion, cerrarSesion, cambiarClave }}>
       {children}
     </AuthContext.Provider>
   )

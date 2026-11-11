@@ -59,6 +59,15 @@ const MENSAJES = {
   DIA_VACIO: 'Cada día necesita al menos un ejercicio.',
   RUTINA_NO_ENCONTRADA: 'Esa rutina ya no está activa (alguien la cambió). Recargá la pantalla.',
   PROGRESION_CICLICA: 'Esa progresión formaría un círculo: el ejercicio elegido ya depende de este.',
+  DNI_INVALIDO: 'El DNI tiene que tener 7 u 8 números, sin puntos.',
+  DATOS_REQUERIDOS: 'Completá nombre y apellido.',
+  CELULAR_INVALIDO: 'Revisá el celular: código de área y número, sin el 0 ni el 15.',
+  DNI_EXISTENTE: 'Ya hay un alumno o integrante del staff con ese DNI.',
+  DNI_DADO_DE_BAJA: 'Ese DNI pertenece a alguien dado de baja. Buscalo en "Dados de baja" y reactivalo.',
+  EMAIL_INVALIDO: 'Revisá el email.',
+  EMAIL_REQUERIDO: 'El email es obligatorio.',
+  FICHA_INCOMPLETA: 'Falta completar la ficha del alumno (fecha de nacimiento, domicilio y contacto de emergencia) antes de cobrar la primera cuota.',
+  FECHA_NACIMIENTO_INVALIDA: 'Revisá la fecha de nacimiento.',
 }
 export const mensajeError = (error) => {
   if (!error) return ''
