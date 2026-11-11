@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { formatearFecha, mensajeError } from '../../lib/utils'
+import { formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
+import { completadosEnSemana, lunesDe } from '../../lib/semana'
 import { aPayload, clave, desdePayload, diaVacio, payloadDesdeBase, validarRutina } from '../../lib/rutinas'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
@@ -34,6 +35,7 @@ export default function RutinaAlumno() {
   const [guardando, setGuardando] = useState(false)
   const [aviso, setAviso] = useState(null)
   const [plantillas, setPlantillas] = useState([])
+  const [diasHechos, setDiasHechos] = useState(new Set()) // días que el alumno completó esta semana
 
   const cargar = async () => {
     const [alumnoRes, ejerciciosRes, rutinaRes, obsRes, plantillasRes] = await Promise.all([
@@ -54,6 +56,11 @@ export default function RutinaAlumno() {
     setAlumno(alumnoRes.data)
     setObservaciones(obsRes.data ?? [])
     setPlantillas(plantillasRes.data ?? [])
+    if (rutinaRes.data) {
+      const { data: sem } = await supabase.from('dias_completados').select('numero_dia, fecha')
+        .eq('rutina_id', rutinaRes.data.id).gte('fecha', lunesDe(hoyAR()))
+      setDiasHechos(completadosEnSemana(sem ?? [], hoyAR()))
+    } else setDiasHechos(new Set())
     setEjercicios(ejerciciosRes.data ?? [])
     setRutina(rutinaRes.data ? aEstado(rutinaRes.data) : null)
     setEditorKey(clave())
@@ -125,6 +132,11 @@ export default function RutinaAlumno() {
         <p className="text-sm text-neutral-500">
           {alumno.plan ?? 'Sin plan'}
           {rutina?.fecha_actualizacion && ` · Actualizada el ${formatearFecha(rutina.fecha_actualizacion)}`}
+          {rutina?.id && (
+            <span className={diasHechos.size ? 'text-emerald-400' : ''}>
+              {` · Esta semana completó ${diasHechos.size} de ${rutina.dias.length} día${rutina.dias.length === 1 ? '' : 's'}`}
+            </span>
+          )}
         </p>
       </div>
 
@@ -142,7 +154,7 @@ export default function RutinaAlumno() {
         </div>
       ) : (
         <>
-          <EditorRutina key={editorKey} value={rutina} onChange={cambiar} ejercicios={ejercicios}
+          <EditorRutina key={editorKey} value={rutina} onChange={cambiar} ejercicios={ejercicios} diasHechos={diasHechos}
             plantillas={plantillas} onGuardarPlantilla={guardarPlantilla} onAviso={setAviso} origen={esteAlumno} />
 
           <div className="flex flex-wrap items-center justify-end gap-2">

@@ -6,6 +6,7 @@ import {
   rutinaConEjercicios,
 } from '../../lib/rutinas'
 import * as portapapeles from '../../lib/portapapeles'
+import { CADENA, estiloSeccion } from '../../lib/secciones'
 
 export const claseInput =
   'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-sm outline-none focus:border-neutral-400'
@@ -21,12 +22,13 @@ export const claseInput =
 //   onGuardarPlantilla:  async ({ tipo, bloque, nombre, objetivo, dias }) → texto de error o null
 //   onAviso:             ({ tipo: 'ok' | 'error', texto }) para mostrar el resultado
 //   origen:              de quién es la rutina (ej. el alumno), para "Pegar … copiado de X"
+//   diasHechos:          Set con los números de día que el alumno completó esta semana (✓ en la pestaña)
 //
 // Copiar/pegar y plantillas en tres niveles (ver lib/rutinas.js):
 //   menú de cada sección · menú del día · menú de la planificación (arriba de los días)
 export default function EditorRutina({
   value, onChange, ejercicios, plantillas = [], onGuardarPlantilla, onAviso = () => {}, origen = '',
-  modo = 'planificacion', bloque: bloqueFijo, etiquetaNombre,
+  modo = 'planificacion', bloque: bloqueFijo, etiquetaNombre, diasHechos = new Set(),
 }) {
   const [diaSel, setDiaSel] = useState(0)
   const [eleccion, setEleccion] = useState(null) // diálogo con opciones
@@ -240,7 +242,9 @@ export default function EditorRutina({
           <MenuAcciones etiqueta="☰ Planificación" titulo="Pegar, agregar o copiar todos los días" grupos={menuPlanificacion()} destacado />
           {rutina.dias.map((d, i) => (
             <button key={d.key} onClick={() => setDiaSel(i)}
-              className={`rounded-lg px-3 py-1.5 text-sm ${i === iDia ? 'bg-white text-neutral-950' : 'border border-neutral-700 text-neutral-300'}`}>
+              title={diasHechos.has(i + 1) ? 'El alumno lo completó esta semana' : undefined}
+              className={`rounded-lg px-3 py-1.5 text-sm ${i === iDia ? 'bg-white font-medium text-neutral-950' : 'border border-neutral-700 text-neutral-200 hover:border-neutral-500'}`}>
+              {diasHechos.has(i + 1) && <span className="text-emerald-500" aria-label="completado esta semana">✓ </span>}
               {nombreDia(i)}
             </button>
           ))}
@@ -349,13 +353,16 @@ function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, o
   // Entrada en calor y Estiramientos: sin descanso ni bi-series
   const conDescanso = llevaDescanso(bloque)
   const cs = conDescanso ? cadenas(items) : items.map((i) => [i])
+  const st = estiloSeccion(bloque)
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 rounded-xl border p-3 ${st.panel}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-medium uppercase tracking-wide text-neutral-400">{bloque}</h3>
+        <div className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm font-semibold ${st.chip}`}>
+          <span aria-hidden>{st.icono}</span><h3>{bloque}</h3>
+        </div>
         {accion}
       </div>
-      {items.length === 0 && <p className="text-sm text-neutral-600">Sin ejercicios en este bloque.</p>}
+      {items.length === 0 && <p className="text-sm text-neutral-400">Sin ejercicios en esta sección.</p>}
       {cs.map((c, n) => {
         const mover = {
           onSubir: n > 0 ? () => onMover(n, -1) : null,
@@ -367,16 +374,16 @@ function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, o
               <ItemEditor item={c[0]} ejercicios={ejercicios} {...mover} conDescanso={conDescanso}
                 onCambiar={(campo, valor) => onCambiar(c[0].key, campo, valor)} onQuitar={() => onQuitar(c[0].key)} />
             ) : (
-              <div className="space-y-2 rounded-xl border border-violet-800 bg-violet-950/30 p-2">
+              <div className={`space-y-2 rounded-xl border-2 p-2 ${CADENA.caja}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-                  <span className="rounded-full bg-violet-600 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-white">
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${CADENA.etiqueta}`}>
                     {nombreCadena(c.length)}
                   </span>
                   <div className="flex items-center gap-1">
-                    <span className="mr-1 hidden text-xs text-violet-300 sm:inline">Sin descanso entre ejercicios · descansa al final</span>
+                    <span className="mr-1 hidden text-xs text-fuchsia-200 sm:inline">Sin descanso entre ejercicios, descansa al final</span>
                     <BotonIcono titulo="Subir" disabled={!mover.onSubir} onClick={mover.onSubir}>↑</BotonIcono>
                     <BotonIcono titulo="Bajar" disabled={!mover.onBajar} onClick={mover.onBajar}>↓</BotonIcono>
-                    <button type="button" onClick={() => onSeparar(n)} className="rounded-md px-2 py-1 text-xs text-violet-300 hover:bg-violet-900">
+                    <button type="button" onClick={() => onSeparar(n)} className="rounded-md px-2 py-1 text-xs text-fuchsia-200 hover:bg-fuchsia-900/60">
                       Separar
                     </button>
                   </div>
@@ -390,7 +397,7 @@ function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, o
             )}
             {conDescanso && n < cs.length - 1 && (
               <button type="button" onClick={() => onUnir(n)}
-                className="block w-full text-center text-xs text-neutral-500 hover:text-violet-300"
+                className="block w-full text-center text-xs text-neutral-400 hover:text-fuchsia-300"
                 title="El alumno hace los dos ejercicios seguidos y descansa recién al terminar el segundo">
                 🔗 Unir con el de abajo (bi-serie)
               </button>
@@ -405,7 +412,7 @@ function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, o
 
 function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuitar, enCadena = false, sinDescanso = false, conDescanso = true }) {
   return (
-    <div className="grid grid-cols-6 gap-2 rounded-lg bg-neutral-900 p-2 sm:grid-cols-12">
+    <div className="grid grid-cols-6 gap-2 rounded-lg bg-neutral-950/70 p-2 sm:grid-cols-12">
       <SelectorEjercicio value={it.ejercicio_id} ejercicios={ejercicios} className={`${claseInput} col-span-6 sm:col-span-4`}
         onChange={(v) => onCambiar('ejercicio_id', v)} />
       <input type="number" min="1" value={it.series} onChange={(e) => onCambiar('series', e.target.value)}
@@ -413,7 +420,7 @@ function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuita
       <input value={it.repeticiones} onChange={(e) => onCambiar('repeticiones', e.target.value)}
         title="Repeticiones" placeholder="Reps (8, 30s…)" className={`${claseInput} col-span-2 sm:col-span-2`} />
       {!conDescanso ? null : sinDescanso ? (
-        <div className="col-span-2 flex items-center text-xs text-violet-300 sm:col-span-2">sin descanso ↓</div>
+        <div className="col-span-2 flex items-center text-xs text-fuchsia-300 sm:col-span-2">sin descanso ↓</div>
       ) : (
       <div className="col-span-2 flex sm:col-span-2" title={`Descanso. Vacío = "${TEXTO_VAMOS}"`}>
         <input inputMode="decimal" value={it.descanso} onChange={(e) => onCambiar('descanso', e.target.value)}

@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import Cargando from '../../components/Cargando'
+import { COLOR_ESTADO, etiquetaEstado } from '../../lib/secciones'
+import { hoyAR } from '../../lib/utils'
+import { lunesDe } from '../../lib/semana'
 import { FILTROS_ALUMNOS, FILTRO_INICIAL, contarPorFiltro, filtrarAlumnos } from '../../lib/filtroAlumnos'
 
 const CLAVE_FILTRO = 'licurgo.coach.filtroAlumnos'
@@ -27,15 +30,24 @@ export default function PanelCoach() {
     Promise.all([
       supabase.from('v_membresias').select('alumno_id, dni, nombre, apellido, plan, estado_membresia, estado_alumno').order('apellido'),
       supabase.from('observaciones_alumno').select('alumno_id').eq('vigente', true),
-      supabase.from('rutinas').select('alumno_id').eq('activa', true),
-    ]).then(([alumnosRes, obsRes, rutinasRes]) => {
+      supabase.from('rutinas').select('id, alumno_id').eq('activa', true),
+      supabase.from('dias_completados').select('alumno_id, rutina_id, numero_dia').gte('fecha', lunesDe(hoyAR())),
+    ]).then(([alumnosRes, obsRes, rutinasRes, semanaRes]) => {
       const conteo = {}
       for (const o of obsRes.data ?? []) conteo[o.alumno_id] = (conteo[o.alumno_id] ?? 0) + 1
       const conRutina = new Set((rutinasRes.data ?? []).map((r) => r.alumno_id))
+      // Días distintos de la rutina activa completados esta semana
+      const activa = new Set((rutinasRes.data ?? []).map((r) => r.id))
+      const semana = {}
+      for (const d of semanaRes.data ?? []) {
+        if (!activa.has(d.rutina_id)) continue
+        ;(semana[d.alumno_id] ??= new Set()).add(d.numero_dia)
+      }
       setAlumnos((alumnosRes.data ?? []).map((a) => ({
         ...a,
         observaciones: conteo[a.alumno_id] ?? 0,
         tieneRutina: conRutina.has(a.alumno_id),
+        diasSemana: semana[a.alumno_id]?.size ?? 0,
       })))
       setCargando(false)
     })
@@ -88,8 +100,17 @@ export default function PanelCoach() {
         {visibles.map((a) => (
           <li key={a.alumno_id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
             <div>
-              <div>{a.apellido}, {a.nombre}</div>
-              <div className="text-xs text-neutral-500">{a.plan ?? 'Sin plan'} · {a.estado_membresia}</div>
+              <div className="font-medium text-neutral-100">{a.apellido}, {a.nombre}</div>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                <span className={`rounded-full px-2 py-0.5 ${COLOR_ESTADO[etiquetaEstado(a)] ?? 'bg-neutral-800 text-neutral-300'}`}>
+                  {etiquetaEstado(a)}
+                </span>
+                {a.diasSemana > 0 && (
+                  <span className="text-emerald-400" title="Días de la rutina completados esta semana">
+                    ✓ {a.diasSemana} día{a.diasSemana > 1 ? 's' : ''} esta semana
+                  </span>
+                )}
+              </div>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Link
@@ -101,7 +122,7 @@ export default function PanelCoach() {
                 {a.observaciones > 0 ? `⚠ ${a.observaciones} observación(es)` : 'Observaciones'}
               </Link>
               {!a.tieneRutina && (
-                <span className="rounded-full bg-neutral-800 px-2.5 py-0.5 text-xs text-neutral-400">Sin rutina</span>
+                <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs text-amber-300">Sin rutina</span>
               )}
               <Link
                 to={`/coach/alumnos/${a.alumno_id}/rutina`}

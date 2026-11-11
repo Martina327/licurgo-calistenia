@@ -6,27 +6,8 @@ import { alternarMarca, guardarChecklist, leerChecklist } from '../../lib/checkl
 import { completadosEnSemana, diaQueToca, lunesDe } from '../../lib/semana'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import { estiloSeccion as estilo } from '../../lib/secciones'
 
-// Color e ícono de cada sección del día. Las clases van completas (Tailwind no arma nombres dinámicos).
-const SECCION = {
-  'Entrada en calor': {
-    icono: '🔥', titulo: 'Entrada en calor', panel: 'border-orange-500/30 bg-orange-500/[0.07]',
-    chip: 'bg-orange-500/20 text-orange-200', numero: 'text-orange-300', tramo: 'bg-orange-400',
-  },
-  Fuerza: {
-    icono: '💪', titulo: 'Fuerza', panel: 'border-sky-500/30 bg-sky-500/[0.07]',
-    chip: 'bg-sky-500/20 text-sky-200', numero: 'text-sky-300', tramo: 'bg-sky-400',
-  },
-  Accesorios: {
-    icono: '🏋️', titulo: 'Accesorios', panel: 'border-indigo-500/30 bg-indigo-500/[0.07]',
-    chip: 'bg-indigo-500/20 text-indigo-200', numero: 'text-indigo-300', tramo: 'bg-indigo-400',
-  },
-  Estiramientos: {
-    icono: '🧘', titulo: 'Estiramientos', panel: 'border-teal-500/30 bg-teal-500/[0.07]',
-    chip: 'bg-teal-500/20 text-teal-200', numero: 'text-teal-300', tramo: 'bg-teal-400',
-  },
-}
-const estilo = (bloque) => SECCION[bloque] ?? SECCION.Fuerza
 
 // CU11 – El alumno consulta su rutina activa y va tildando lo que hace en el día.
 // Un tilde por ejercicio, salvo:
