@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { limpiarChecklists } from '../lib/checklist'
 import { dniAEmail } from '../lib/utils'
 
 const AuthContext = createContext(null)
@@ -57,7 +58,8 @@ export function AuthProvider({ children }) {
     return { error }
   }
 
-  const cerrarSesion = () => supabase.auth.signOut()
+  // Al salir se borra el checklist guardado en el navegador: al volver, el día arranca limpio
+  const cerrarSesion = () => { limpiarChecklists(); return supabase.auth.signOut() }
 
   // Cambio de clave (obligatorio en el primer ingreso del alumno, CU02).
   // 1) cambia la clave en Supabase Auth  2) apaga la marca debe_cambiar_clave
