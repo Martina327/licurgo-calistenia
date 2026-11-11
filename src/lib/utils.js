@@ -30,7 +30,7 @@ export const hoyAR = () =>
 // Enums de la base (public.categoria_ejercicio y public.bloque_ejercicio).
 // Si cambian en schema.sql, actualizar acá también.
 export const CATEGORIAS_EJERCICIO = ['Tracción', 'Empuje', 'Core', 'Piernas', 'Movilidad', 'Skill']
-export const BLOQUES_EJERCICIO = ['Entrada en calor', 'Fuerza', 'Accesorios']
+export const BLOQUES_EJERCICIO = ['Entrada en calor', 'Fuerza', 'Accesorios', 'Estiramientos']
 
 export const formatearPesos = (n) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n ?? 0)

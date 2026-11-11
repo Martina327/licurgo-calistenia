@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { BLOQUES_EJERCICIO, CATEGORIAS_EJERCICIO } from '../../lib/utils'
 import {
-  BLOQUE_CALENTAMIENTO, MAX_DIAS, TEXTO_VAMOS, UNIDADES_DESCANSO, cadenas, conBloque, desdePayload, diaNuevo, itemVacio, nombreCadena,
+  BLOQUE_CALENTAMIENTO, MAX_DIAS, llevaDescanso, TEXTO_VAMOS, UNIDADES_DESCANSO, cadenas, conBloque, desdePayload, diaNuevo, itemVacio, nombreCadena,
 } from '../../lib/rutinas'
 
 export const claseInput =
@@ -154,7 +154,9 @@ export default function EditorRutina({ value, onChange, ejercicios, calentamient
 }
 
 function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, onUnir, onSeparar, onQuitar, onAgregar }) {
-  const cs = cadenas(items)
+  // Entrada en calor y Estiramientos: sin descanso ni bi-series
+  const conDescanso = llevaDescanso(bloque)
+  const cs = conDescanso ? cadenas(items) : items.map((i) => [i])
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -170,7 +172,7 @@ function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, o
         return (
           <div key={c[0].key} className="space-y-1">
             {c.length === 1 ? (
-              <ItemEditor item={c[0]} ejercicios={ejercicios} {...mover}
+              <ItemEditor item={c[0]} ejercicios={ejercicios} {...mover} conDescanso={conDescanso}
                 onCambiar={(campo, valor) => onCambiar(c[0].key, campo, valor)} onQuitar={() => onQuitar(c[0].key)} />
             ) : (
               <div className="space-y-2 rounded-xl border border-violet-800 bg-violet-950/30 p-2">
@@ -194,7 +196,7 @@ function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, o
                 ))}
               </div>
             )}
-            {n < cs.length - 1 && (
+            {conDescanso && n < cs.length - 1 && (
               <button type="button" onClick={() => onUnir(n)}
                 className="block w-full text-center text-xs text-neutral-500 hover:text-violet-300"
                 title="El alumno hace los dos ejercicios seguidos y descansa recién al terminar el segundo">
@@ -209,7 +211,7 @@ function BloqueEditor({ bloque, items, ejercicios, accion, onCambiar, onMover, o
   )
 }
 
-function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuitar, enCadena = false, sinDescanso = false }) {
+function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuitar, enCadena = false, sinDescanso = false, conDescanso = true }) {
   return (
     <div className="grid grid-cols-6 gap-2 rounded-lg bg-neutral-900 p-2 sm:grid-cols-12">
       <SelectorEjercicio value={it.ejercicio_id} ejercicios={ejercicios} className={`${claseInput} col-span-6 sm:col-span-4`}
@@ -218,7 +220,7 @@ function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuita
         title="Series" placeholder="Series" className={`${claseInput} col-span-2 sm:col-span-1`} />
       <input value={it.repeticiones} onChange={(e) => onCambiar('repeticiones', e.target.value)}
         title="Repeticiones" placeholder="Reps (8, 30s…)" className={`${claseInput} col-span-2 sm:col-span-2`} />
-      {sinDescanso ? (
+      {!conDescanso ? null : sinDescanso ? (
         <div className="col-span-2 flex items-center text-xs text-violet-300 sm:col-span-2">sin descanso ↓</div>
       ) : (
       <div className="col-span-2 flex sm:col-span-2" title={`Descanso. Vacío = "${TEXTO_VAMOS}"`}>
@@ -233,7 +235,7 @@ function ItemEditor({ item: it, ejercicios, onCambiar, onSubir, onBajar, onQuita
       )}
       <input value={it.nota} onChange={(e) => onCambiar('nota', e.target.value)}
         title="Observación para el alumno: la ve al tocar ⓘ" placeholder="Observación ⓘ"
-        className={`${claseInput} col-span-4 sm:col-span-2`} />
+        className={`${claseInput} ${conDescanso ? 'col-span-4 sm:col-span-2' : 'col-span-6 sm:col-span-4'}`} />
       <div className="col-span-2 flex justify-end gap-1 sm:col-span-1">
         {!enCadena && <BotonIcono titulo="Subir" disabled={!onSubir} onClick={onSubir}>↑</BotonIcono>}
         {!enCadena && <BotonIcono titulo="Bajar" disabled={!onBajar} onClick={onBajar}>↓</BotonIcono>}
