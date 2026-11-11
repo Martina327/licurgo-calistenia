@@ -103,7 +103,7 @@ export default function CatalogoEjercicios() {
       ) : (
         <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800">
           {visibles.map((e) => (
-            <li key={e.id} className={`flex flex-wrap items-start justify-between gap-3 px-4 py-3 ${e.activo ? '' : 'opacity-50'}`}>
+            <li key={e.id} className={`flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between ${e.activo ? '' : 'opacity-50'}`}>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{e.nombre}</span>
@@ -112,7 +112,7 @@ export default function CatalogoEjercicios() {
                 </div>
                 {e.descripcion && <p className="mt-0.5 text-sm text-neutral-400">{e.descripcion}</p>}
               </div>
-              <div className="flex gap-2">
+              <div className="flex shrink-0 flex-wrap gap-2">
                 <button
                   onClick={() => { setAviso(null); setForm({ ...e, descripcion: e.descripcion ?? '' }) }}
                   className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"

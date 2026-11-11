@@ -190,13 +190,13 @@ function ListaPlantillas({ items, boton, onAbrir, onDuplicar, onEliminar }) {
   return (
     <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800">
       {items.map((p) => (
-        <li key={p.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+        <li key={p.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <div className="font-medium">{p.nombre}</div>
             {p.objetivo && <p className="text-sm text-neutral-400">{p.objetivo}</p>}
             <p className="text-xs text-neutral-500">{resumen(p)} — actualizada el {formatearFecha(p.fecha_actualizacion)}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             <button onClick={() => onAbrir(p)} className={boton}>Editar</button>
             <button onClick={() => onDuplicar(p)} className={boton}>Duplicar</button>
             <button onClick={() => onEliminar(p)} className="rounded-md px-3 py-1.5 text-sm text-red-400 hover:bg-red-950">Eliminar</button>
