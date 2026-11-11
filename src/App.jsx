@@ -13,6 +13,7 @@ import PanelCoach from './pages/coach/PanelCoach'
 import CatalogoEjercicios from './pages/coach/CatalogoEjercicios'
 import RutinaAlumno from './pages/coach/RutinaAlumno'
 import ObservacionesAlumno from './pages/coach/ObservacionesAlumno'
+import Plantillas from './pages/coach/Plantillas'
 import InicioAlumno from './pages/alumno/InicioAlumno'
 import MiRutina from './pages/alumno/MiRutina'
 
@@ -42,6 +43,7 @@ export default function App() {
           <Route element={<RutaProtegida roles={['Coach', 'SuperAdmin']} />}>
             <Route path="/coach" element={<PanelCoach />} />
             <Route path="/coach/ejercicios" element={<CatalogoEjercicios />} />
+            <Route path="/coach/plantillas" element={<Plantillas />} />
             <Route path="/coach/alumnos/:alumnoId/rutina" element={<RutinaAlumno />} />
             <Route path="/coach/alumnos/:alumnoId/observaciones" element={<ObservacionesAlumno />} />
           </Route>

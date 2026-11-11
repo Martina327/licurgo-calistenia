@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { BLOQUES_EJERCICIO, formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
-import { TEXTO_VAMOS, agruparPorDia, cadenasPorGrupo, nombreCadena, textoDescanso } from '../../lib/rutinas'
+import { BLOQUE_CALENTAMIENTO, TEXTO_VAMOS, agruparPorDia, cadenasPorGrupo, nombreCadena, textoDescanso } from '../../lib/rutinas'
 import { alternarMarca, guardarChecklist, leerChecklist } from '../../lib/checklist'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
@@ -140,6 +140,8 @@ function TarjetaEjercicio({ item: it, hecho, onMarcar, sinDescanso = false }) {
   const [verInfo, setVerInfo] = useState(false)
   const tieneInfo = Boolean(it.descripcion || it.nota)
   const descansoTxt = textoDescanso(it.descanso_seg)
+  // En la entrada en calor, sin descanso cargado no se muestra nada (el ¡VAMOS! es para el trabajo)
+  const ocultarDescanso = !descansoTxt && it.bloque === BLOQUE_CALENTAMIENTO
 
   return (
     <div className={`relative rounded-xl border ${hecho ? 'border-emerald-900 bg-emerald-950/40' : 'border-neutral-800 bg-neutral-900'}`}>
@@ -150,7 +152,7 @@ function TarjetaEjercicio({ item: it, hecho, onMarcar, sinDescanso = false }) {
           <div className="text-sm text-neutral-300">{it.series} × {it.repeticiones}</div>
           {sinDescanso ? (
             <div className="text-sm font-medium text-violet-300">Sin descanso → seguí con el siguiente</div>
-          ) : (
+          ) : ocultarDescanso ? null : (
             <div className="text-sm text-neutral-400">
               {descansoTxt ? `Descanso ${descansoTxt}` : <span className="font-semibold text-amber-300">{TEXTO_VAMOS} 🔔</span>}
             </div>
