@@ -941,7 +941,8 @@ CREATE VIEW public.v_rutina_alumno WITH (security_invoker = true) AS
 SELECT r.id AS rutina_id, r.alumno_id, r.coach_id, r.nombre AS rutina, r.objetivo,
        r.fecha_actualizacion, d.id AS rutina_dia_id, d.numero_dia, d.nombre AS dia,
        i.id AS item_id, i.bloque, i.orden, e.id AS ejercicio_id, e.nombre AS ejercicio,
-       e.categoria, e.video_url, i.series, i.repeticiones, i.descanso_seg, i.nota
+       e.categoria, e.video_url, i.series, i.repeticiones, i.descanso_seg, i.nota,
+       e.descripcion
   FROM public.rutinas r
   JOIN public.rutina_dias d       ON d.rutina_id = r.id
   LEFT JOIN public.rutina_items i ON i.rutina_dia_id = d.id
