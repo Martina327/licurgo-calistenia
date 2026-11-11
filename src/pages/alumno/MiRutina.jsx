@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
 import { TEXTO_VAMOS, agruparPorDia, nombreCadena, tareasDelDia, textoDescanso } from '../../lib/rutinas'
-import { alternarMarca, guardarChecklist, leerChecklist } from '../../lib/checklist'
+import { alternarMarca, guardarChecklist, leerChecklist, sinMarcas } from '../../lib/checklist'
 import { completadosEnSemana, diaQueToca, lunesDe } from '../../lib/semana'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
-import { estiloSeccion as estilo } from '../../lib/secciones'
+import { CADENA, estiloSeccion as estilo } from '../../lib/secciones'
 
 
 // CU11 – El alumno consulta su rutina activa y va tildando lo que hace en el día.
@@ -24,6 +24,8 @@ export default function MiRutina() {
   const [error, setError] = useState('')
   const [check, setCheck] = useState({ marcados: [], dia: null })
   const [completados, setCompletados] = useState([]) // [{ numero_dia, fecha, creado }] desde el lunes
+  const [diaVista, setDiaVista] = useState(null)     // día que se muestra en esta visita
+  const cola = useRef(Promise.resolve())              // los cambios en la base salen de a uno, en orden
 
   useEffect(() => {
     // El RLS hace que el alumno solo reciba su propia rutina
@@ -34,10 +36,25 @@ export default function MiRutina() {
         if (error) setError(mensajeError(error))
         setFilas(data ?? [])
         if (data?.length) {
-          setCheck(leerChecklist(data[0].rutina_id, hoyAR()))
+          const hoy = hoyAR()
           const sem = await supabase.from('dias_completados').select('numero_dia, fecha, creado')
-            .eq('rutina_id', data[0].rutina_id).gte('fecha', lunesDe(hoyAR())).order('creado')
-          setCompletados(sem.data ?? [])
+            .eq('rutina_id', data[0].rutina_id).gte('fecha', lunesDe(hoy)).order('creado')
+          const comp = sem.data ?? []
+          // Un día que quedó completo arranca sin tildes la próxima vez que se entra.
+          // Si un día está a medio hacer (recargó en pleno entrenamiento), se conserva y se vuelve a abrir.
+          const diasRutina = agruparPorDia(data)
+          const guardado = leerChecklist(data[0].rutina_id, hoy)
+          const tareasDe = (d) => tareasDelDia(d.items).map((t) => t.id)
+          const completos = diasRutina.filter((d) => tareasDe(d).every((id) => guardado.marcados.includes(id)))
+          const limpio = sinMarcas(guardado, new Set(completos.flatMap(tareasDe)))
+          if (limpio.marcados.length !== guardado.marcados.length) guardarChecklist(data[0].rutina_id, limpio)
+          const elegido = diasRutina.find((d) => d.numero === guardado.dia)
+          const aMedias = elegido && tareasDe(elegido).some((id) => limpio.marcados.includes(id))
+          setCheck(limpio)
+          setCompletados(comp)
+          setDiaVista(aMedias
+            ? elegido.numero
+            : diaQueToca({ dias: diasRutina.map((d) => d.numero), completados: comp, hoy, elegidoHoy: guardado.dia }))
         }
         setCargando(false)
       })
@@ -46,41 +63,49 @@ export default function MiRutina() {
   const dias = useMemo(() => agruparPorDia(filas), [filas])
   const rutina = filas[0]
   const hoy = hoyAR()
-  const numeroQueToca = diaQueToca({ dias: dias.map((d) => d.numero), completados, hoy, elegidoHoy: check.dia })
-  const diaActual = dias.find((d) => d.numero === numeroQueToca) ?? dias[0]
+  const diaActual = dias.find((d) => d.numero === diaVista) ?? dias[0]
   const tareas = useMemo(() => (diaActual ? tareasDelDia(diaActual.items) : []), [diaActual])
   const hechosSemana = completadosEnSemana(completados, hoy)
+  const completo = tareas.length > 0 && tareas.every((t) => check.marcados.includes(t.id))
+  const registradoHoy = (n) => completados.some((c) => c.numero_dia === n && c.fecha === hoy)
+
+  // Día completo → queda hecho en la semana. Se revisa siempre (no solo al tildar), así no se pierde
+  // si el pedido falló o si las marcas ya estaban.
+  useEffect(() => {
+    if (!rutina || !diaActual || !completo || registradoHoy(diaActual.numero)) return
+    const n = diaActual.numero
+    setCompletados((cs) => [...cs, { numero_dia: n, fecha: hoy, creado: new Date().toISOString() }])
+    cola.current = cola.current.then(async () => {
+      const { error } = await supabase.from('dias_completados').insert({ rutina_id: rutina.rutina_id, numero_dia: n })
+      if (error && error.code !== '23505') setError(mensajeError(error))
+    })
+  }, [completo, diaActual?.numero]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Si destilda algo de un día que se registró hoy, se borra el registro de hoy
+  const desregistrar = (n) => {
+    if (!registradoHoy(n)) return
+    setCompletados((cs) => cs.filter((c) => !(c.numero_dia === n && c.fecha === hoy)))
+    cola.current = cola.current.then(() =>
+      supabase.from('dias_completados').delete().eq('rutina_id', rutina.rutina_id).eq('numero_dia', n).eq('fecha', hoy))
+  }
 
   const actualizar = (nuevo) => {
     setCheck(nuevo)
     guardarChecklist(rutina.rutina_id, nuevo)
   }
   const elegirDia = (numero) => {
+    setDiaVista(numero)
     actualizar({ ...check, fecha: hoyAR(), dia: numero })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const marcar = (id) => {
-    const nuevo = alternarMarca({ ...check, fecha: hoyAR(), dia: diaActual.numero }, id)
-    actualizar(nuevo)
-    registrarDia(tareas.every((t) => nuevo.marcados.includes(t.id)))
-  }
-  // Día completo → queda hecho en la semana; si destilda algo hoy, se borra el registro de hoy
-  const registrarDia = async (completo) => {
-    const n = diaActual.numero
-    const yaHoy = completados.some((c) => c.numero_dia === n && c.fecha === hoy)
-    if (completo && !yaHoy) {
-      const fila = { rutina_id: rutina.rutina_id, numero_dia: n }
-      setCompletados((cs) => [...cs, { numero_dia: n, fecha: hoy, creado: new Date().toISOString() }])
-      const { error } = await supabase.from('dias_completados').insert(fila)
-      if (error && error.code !== '23505') setError(mensajeError(error))
-    } else if (!completo && yaHoy) {
-      setCompletados((cs) => cs.filter((c) => !(c.numero_dia === n && c.fecha === hoy)))
-      await supabase.from('dias_completados').delete().eq('rutina_id', rutina.rutina_id).eq('numero_dia', n).eq('fecha', hoy)
-    }
+    const quitando = check.marcados.includes(id)
+    actualizar(alternarMarca({ ...check, fecha: hoyAR(), dia: diaActual.numero }, id))
+    if (quitando) desregistrar(diaActual.numero)
   }
   const reiniciar = () => {
     actualizar({ ...check, fecha: hoyAR(), dia: diaActual.numero, marcados: check.marcados.filter((id) => !tareas.some((t) => t.id === id)) })
-    registrarDia(false)
+    desregistrar(diaActual.numero)
   }
 
   if (cargando) return <Cargando />
@@ -96,7 +121,7 @@ export default function MiRutina() {
 
   const hecha = (t) => check.marcados.includes(t.id)
   const hechos = tareas.filter(hecha).length
-  const completo = tareas.length > 0 && hechos === tareas.length
+  const yaHechoEstaSemana = hechosSemana.has(diaActual.numero) && !completo
   const bloques = [...new Set(tareas.map((t) => t.bloque))]
 
   return (
@@ -117,7 +142,7 @@ export default function MiRutina() {
       {/* Fija debajo del menú de la app: días + progreso siempre a la vista */}
       <div className="sticky top-[57px] z-[5] -mx-4 mb-4 space-y-2.5 border-b border-neutral-800 bg-neutral-950/95 px-4 pb-3 pt-2 backdrop-blur">
         {dias.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto">
+          <div className="flex gap-2 overflow-x-auto [scrollbar-width:none]">
             {dias.map((d) => {
               const activo = d.numero === diaActual.numero
               const hecho = hechosSemana.has(d.numero)
@@ -125,33 +150,30 @@ export default function MiRutina() {
                 <button key={d.numero} onClick={() => elegirDia(d.numero)} aria-pressed={activo}
                   title={hecho ? 'Ya lo hiciste esta semana' : undefined}
                   className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                    activo ? 'bg-white text-neutral-950'
-                      : hecho ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/40 hover:bg-emerald-500/25'
-                        : 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700'
+                    activo ? 'bg-white text-neutral-950' : 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700'
                   }`}>
-                  {hecho && <span aria-label="hecho esta semana" className={activo ? 'text-emerald-600' : 'text-emerald-300'}>✓ </span>}
+                  {hecho && <span aria-label="hecho esta semana" className={activo ? 'text-emerald-600' : 'text-emerald-400'}>✓ </span>}
                   Día {d.numero}{d.nombre && ` · ${d.nombre}`}
                 </button>
               )
             })}
           </div>
         )}
-        <div className="flex items-baseline justify-between">
-          <span className="text-sm text-neutral-200">
-            <span className="text-lg font-bold tabular-nums text-white">{hechos}</span>
-            <span className="text-neutral-400"> de {tareas.length}</span>
-            {completo ? <span className="ml-2 font-semibold text-emerald-300">¡Día completado! 💪</span> : ' hechos'}
-          </span>
-          {hechos > 0 && <button onClick={reiniciar} className="text-sm text-neutral-400 hover:text-white">Reiniciar</button>}
+        {/* Progreso solo visual: un tramo por tilde, del color de su sección */}
+        <div className="flex items-center gap-2">
+          <div className="flex flex-1 gap-1" role="progressbar" aria-valuenow={hechos} aria-valuemin={0} aria-valuemax={tareas.length}
+            aria-label={`${hechos} de ${tareas.length} hechos`}>
+            {tareas.map((t) => (
+              <div key={t.id} className={`h-2.5 flex-1 rounded-full transition-colors duration-300 ${
+                hecha(t) ? (t.tipo === 'cadena' ? CADENA.tramo : estilo(t.bloque).tramo) : 'bg-neutral-800'}`} />
+            ))}
+          </div>
+          {hechos > 0 && (
+            <button onClick={reiniciar} aria-label="Reiniciar este día" title="Reiniciar este día"
+              className="-my-1 rounded-full px-1.5 text-lg leading-none text-neutral-400 hover:text-white">↺</button>
+          )}
         </div>
-        {/* Un tramo por tilde, del color de su sección */}
-        <div className="flex gap-1" role="progressbar" aria-valuenow={hechos} aria-valuemin={0} aria-valuemax={tareas.length}
-          aria-label={`${hechos} de ${tareas.length} hechos`}>
-          {tareas.map((t) => (
-            <div key={t.id} className={`h-2.5 flex-1 rounded-full transition-colors duration-300 ${
-              hecha(t) ? estilo(t.bloque).tramo : 'bg-neutral-800'}`} />
-          ))}
-        </div>
+        {yaHechoEstaSemana && <p className="text-xs text-neutral-400">✓ Este día ya lo hiciste esta semana.</p>}
       </div>
 
       <div className="space-y-4">
@@ -162,7 +184,7 @@ export default function MiRutina() {
           const terminada = seccion && hecha(seccion)
           return (
             <section key={bloque} aria-label={st.titulo}
-              className={`rounded-2xl border p-3 transition-colors ${terminada ? 'border-emerald-500/40 bg-emerald-500/[0.07]' : st.panel}`}>
+              className={`rounded-2xl border p-3 ${st.panel}`}>
               <div className="mb-2.5 flex items-center justify-between gap-2">
                 <h2 className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm font-semibold ${st.chip}`}>
                   <span aria-hidden>{st.icono}</span>{st.titulo}
@@ -172,12 +194,12 @@ export default function MiRutina() {
 
               {seccion ? (
                 <>
-                  <ul className="divide-y divide-white/5">
+                  <ul className={`divide-y divide-white/5 transition-opacity ${terminada ? 'opacity-50' : ''}`}>
                     {seccion.items.map((it) => (
                       <li key={it.item_id}><FilaEjercicio item={it} st={st} hecho={terminada} /></li>
                     ))}
                   </ul>
-                  <BotonTilde hecho={terminada} onClick={() => marcar(seccion.id)}
+                  <BotonTilde hecho={terminada} st={st} onClick={() => marcar(seccion.id)}
                     etiqueta={`${st.titulo} completado`} />
                 </>
               ) : (
@@ -200,22 +222,23 @@ export default function MiRutina() {
 }
 
 // Un tilde redondo grande, fácil de tocar con la mano transpirada
-function Tilde({ hecho, onClick, etiqueta }) {
+// Al tildar se pinta del color de su sección (o fucsia en una bi-serie)
+function Tilde({ hecho, onClick, etiqueta, color }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={hecho} aria-label={etiqueta}
       className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 text-lg font-bold transition-colors ${
-        hecho ? 'border-emerald-400 bg-emerald-400 text-neutral-950' : 'border-neutral-500 bg-neutral-950/40 text-transparent hover:border-neutral-300'
+        hecho ? color : 'border-neutral-500 bg-neutral-950/40 text-transparent hover:border-neutral-300'
       }`}>
       ✓
     </button>
   )
 }
 
-function BotonTilde({ hecho, onClick, etiqueta }) {
+function BotonTilde({ hecho, st, onClick, etiqueta }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={hecho} aria-label={etiqueta}
-      className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-[15px] font-semibold transition-colors ${
-        hecho ? 'bg-emerald-400 text-neutral-950' : 'border-2 border-dashed border-neutral-500 text-neutral-100 hover:border-neutral-300'
+      className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 py-3 text-[15px] font-semibold transition-colors ${
+        hecho ? st.tilde : 'border-dashed border-neutral-500 text-neutral-100 hover:border-neutral-300'
       }`}>
       <span aria-hidden>{hecho ? '✓' : '○'}</span>Completado
     </button>
@@ -241,11 +264,10 @@ function Descanso({ seg }) {
 // Ejercicio suelto (Fuerza / Accesorios): tilde propio
 function TarjetaEjercicio({ item: it, st, hecho, onMarcar }) {
   return (
-    <div className={`rounded-xl border p-3 transition-colors ${
-      hecho ? 'border-emerald-500/40 bg-emerald-500/[0.08]' : 'border-white/10 bg-neutral-900'}`}>
+    <div className="rounded-xl border border-white/10 bg-neutral-900 p-3">
       <div className="flex items-start gap-3">
-        <Tilde hecho={hecho} onClick={onMarcar} etiqueta={`${hecho ? 'Desmarcar' : 'Marcar'} ${it.ejercicio}`} />
-        <div className="min-w-0 flex-1">
+        <Tilde hecho={hecho} color={st.tilde} onClick={onMarcar} etiqueta={`${hecho ? 'Desmarcar' : 'Marcar'} ${it.ejercicio}`} />
+        <div className={`min-w-0 flex-1 transition-opacity ${hecho ? 'opacity-50' : ''}`}>
           <FilaEjercicio item={it} st={st} hecho={hecho} compacta />
           <div className="mt-1.5"><Descanso seg={it.descanso_seg} /></div>
         </div>
@@ -259,10 +281,9 @@ function Cadena({ tarea, st, hecho, onMarcar }) {
   const nombres = tarea.items.map((i) => i.ejercicio)
   const ultimo = tarea.items[tarea.items.length - 1]
   return (
-    <div className={`rounded-xl border-2 p-3 transition-colors ${
-      hecho ? 'border-emerald-500/50 bg-emerald-500/[0.08]' : 'border-fuchsia-500/50 bg-fuchsia-500/[0.08]'}`}>
+    <div className={`rounded-xl border-2 p-3 ${CADENA.caja}`}>
       <div className="flex items-start gap-3">
-        <Tilde hecho={hecho} onClick={onMarcar} etiqueta={`${hecho ? 'Desmarcar' : 'Marcar'} ${nombreCadena(nombres.length).toLowerCase()}`} />
+        <Tilde hecho={hecho} color={CADENA.tilde} onClick={onMarcar} etiqueta={`${hecho ? 'Desmarcar' : 'Marcar'} ${nombreCadena(nombres.length).toLowerCase()}`} />
         <div className="min-w-0 flex-1">
           <span className="inline-block rounded-full bg-fuchsia-500 px-2.5 py-0.5 text-xs font-bold text-white">
             {nombreCadena(nombres.length)}
@@ -272,7 +293,7 @@ function Cadena({ tarea, st, hecho, onMarcar }) {
           </p>
         </div>
       </div>
-      <ol className="mt-2 divide-y divide-white/5 rounded-lg bg-neutral-950/40 px-3">
+      <ol className={`mt-2 divide-y divide-white/5 rounded-lg bg-neutral-950/40 px-3 transition-opacity ${hecho ? 'opacity-50' : ''}`}>
         {tarea.items.map((it, n) => (
           <li key={it.item_id} className="flex gap-2">
             <span className="pt-3 text-sm font-bold tabular-nums text-fuchsia-300">{n + 1}</span>
@@ -295,7 +316,7 @@ function FilaEjercicio({ item: it, st, hecho, compacta = false }) {
     <div className={compacta ? '' : 'py-2.5'}>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className={`text-[15px] font-semibold leading-snug ${hecho ? 'text-neutral-400 line-through decoration-emerald-400/70' : 'text-white'}`}>
+          <div className="text-[15px] font-semibold leading-snug text-white">
             {it.ejercicio}
           </div>
           <Volumen it={it} st={st} />

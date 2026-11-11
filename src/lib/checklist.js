@@ -44,3 +44,19 @@ export const alternarMarca = (estado, itemId) => ({
     ? estado.marcados.filter((id) => id !== itemId)
     : [...estado.marcados, itemId],
 })
+
+// Saca las marcas de las tareas indicadas (ej. las de días ya completados esta semana:
+// al volver a entrar, el día arranca limpio)
+export const sinMarcas = (estado, ids) => ({ ...estado, marcados: estado.marcados.filter((id) => !ids.has(id)) })
+
+// Al cerrar sesión se borran los checklists guardados en este navegador
+export function limpiarChecklists(storage = globalThis.localStorage) {
+  try {
+    for (let i = storage.length - 1; i >= 0; i--) {
+      const k = storage.key(i)
+      if (k?.startsWith(PREFIJO)) storage.removeItem(k)
+    }
+  } catch {
+    // sin almacenamiento disponible: nada que borrar
+  }
+}

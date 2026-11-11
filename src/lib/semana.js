@@ -19,17 +19,15 @@ export function completadosEnSemana(completados, hoy) {
   return new Set(completados.filter((c) => c.fecha >= lunes && c.fecha <= hoy).map((c) => c.numero_dia))
 }
 
-// Qué día abrir:
-//   1. el que el alumno eligió hoy (si sigue existiendo)
-//   2. el que completó hoy (vuelve a abrir y ve que ya está hecho)
-//   3. el primer día de la rutina que todavía no hizo esta semana
-//   4. si ya hizo todos: el que sigue al último que completó (vuelve a empezar)
+// Qué día abrir al entrar:
+//   1. el que el alumno eligió hoy, si todavía no lo completó (ej. recargó a mitad del entrenamiento)
+//   2. el primer día de la rutina que todavía no hizo esta semana
+//   3. si ya hizo todos: el que sigue al último que completó (vuelve a empezar)
+// Un día ya completado no se vuelve a abrir solo: el alumno entra y empieza lo que le toca.
 export function diaQueToca({ dias, completados, hoy, elegidoHoy = null }) {
   if (!dias.length) return null
-  if (elegidoHoy != null && dias.includes(elegidoHoy)) return elegidoHoy
-  const deHoy = completados.filter((c) => c.fecha === hoy && dias.includes(c.numero_dia))
-  if (deHoy.length) return deHoy[deHoy.length - 1].numero_dia
   const hechos = completadosEnSemana(completados, hoy)
+  if (elegidoHoy != null && dias.includes(elegidoHoy) && !hechos.has(elegidoHoy)) return elegidoHoy
   const pendiente = dias.find((n) => !hechos.has(n))
   if (pendiente != null) return pendiente
   const ultimo = [...completados].filter((c) => dias.includes(c.numero_dia))
