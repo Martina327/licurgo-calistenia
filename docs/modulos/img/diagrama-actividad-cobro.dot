@@ -1,0 +1,56 @@
+digraph ActividadCobro {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=20, bgcolor="white", pad=0.4, nodesep=0.45, ranksep=0.42, newrank=true,
+         label="Diagrama de actividad · Cobro de cuota en efectivo (CU06)\n ", labelloc=t];
+  node  [fontname="Helvetica", fontsize=12, shape=box, style="rounded,filled", penwidth=1.3, margin="0.22,0.1"];
+  edge  [fontname="Helvetica", fontsize=10.5, color="#3F3F46", fontcolor="#18181B", penwidth=1.1];
+
+  subgraph cluster_rec {
+    label="Recepcionista"; fontsize=14; fontcolor="#1F5F8B"; style="rounded"; color="#1F5F8B"; bgcolor="#F4F8FB"; margin=18;
+    node [fillcolor="#E3EEF6", color="#1F5F8B"];
+    inicio   [shape=circle, label="", width=0.25, fixedsize=true, style=filled, fillcolor="#18181B", color="#18181B"];
+    entrar   [label="Ingresa a Caja"];
+    abrir    [label="Cuenta el efectivo inicial\ny abre el turno"];
+    buscar   [label="Busca al alumno\npor DNI o nombre\ny elige Cobrar"];
+    ficha    [label="Completa la ficha:\nemail, nacimiento, domicilio,\ncontacto de emergencia"];
+    recibe   [label="Recibe el dinero y confirma\n\"Recibí $ … en efectivo\""];
+  }
+
+  subgraph cluster_sis {
+    label="Sistema"; fontsize=14; fontcolor="#3E4A46"; style="rounded"; color="#3E4A46"; bgcolor="#F7F8F7"; margin=18;
+    node [fillcolor="#E7EBE8", color="#3E4A46"];
+    d_turno  [shape=diamond, label="¿Turno\nabierto?", style=filled, margin="0.05,0.05"];
+    d_prim   [shape=diamond, label="¿Primer pago y\nficha incompleta?", style=filled, margin="0.05,0.05"];
+    guarda   [label="Guarda la ficha"];
+    muestra  [label="Muestra importe del plan,\nvencimiento actual y nuevo"];
+    d_base   [shape=diamond, label="¿Primer pago\no inactivo?", style=filled, margin="0.05,0.05"];
+    desde_hoy[label="Nuevo vencimiento =\nhoy + 30 días"];
+    desde_venc[label="Nuevo vencimiento =\nvencimiento actual + 30 días"];
+    registra [label="Registra el ingreso\n(Cuota · Efectivo · turno · usuario)\ny actualiza el vencimiento"];
+    activo   [label="El alumno queda Activo\n(si estaba en prueba o inactivo)"];
+    confirma [label="Muestra la confirmación\ncon el nuevo vencimiento"];
+    fin      [shape=doublecircle, label="", width=0.2, fixedsize=true, style=filled, fillcolor="#18181B", color="#18181B"];
+  }
+
+  inicio -> entrar -> d_turno;
+  d_turno -> abrir   [label=" No"];
+  abrir   -> buscar;
+  d_turno -> buscar  [label=" Sí"];
+  buscar  -> d_prim;
+  d_prim  -> ficha   [label=" Sí"];
+  ficha   -> guarda [constraint=false];
+  guarda  -> muestra;
+  d_prim  -> muestra [label=" No"];
+  muestra -> recibe;
+  recibe  -> d_base;
+  d_base  -> desde_hoy  [label=" Sí"];
+  d_base  -> desde_venc [label=" No"];
+  desde_hoy  -> registra;
+  desde_venc -> registra;
+  registra -> activo -> confirma -> fin;
+
+  {rank=same; entrar; d_turno}
+  {rank=same; buscar; d_prim}
+  {rank=same; ficha; guarda}
+  ficha -> guarda [style=invis, weight=0];
+  {rank=same; recibe; d_base}
+}
