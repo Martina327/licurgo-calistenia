@@ -10,6 +10,7 @@ import DashboardIngresos from './pages/superadmin/DashboardIngresos'
 import DatosCobro from './pages/superadmin/DatosCobro'
 import Mostrador from './pages/recepcion/Mostrador'
 import Alumnos from './pages/recepcion/Alumnos'
+import Comprobantes from './pages/recepcion/Comprobantes'
 import PanelCoach from './pages/coach/PanelCoach'
 import CatalogoEjercicios from './pages/coach/CatalogoEjercicios'
 import RutinaAlumno from './pages/coach/RutinaAlumno'
@@ -41,6 +42,7 @@ export default function App() {
           <Route element={<RutaProtegida roles={['Recepcionista', 'SuperAdmin']} />}>
             <Route path="/recepcion" element={<Mostrador />} />
             <Route path="/recepcion/alumnos" element={<Alumnos />} />
+            <Route path="/recepcion/comprobantes" element={<Comprobantes />} />
           </Route>
           <Route element={<RutaProtegida roles={['Coach', 'SuperAdmin']} />}>
             <Route path="/coach" element={<PanelCoach />} />
