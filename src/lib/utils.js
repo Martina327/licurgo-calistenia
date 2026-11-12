@@ -77,6 +77,8 @@ const MENSAJES = {
   SIN_PRECIO_MENSUAL: 'Ese salón no tiene precio mensual. Pedile al dueño que lo cargue.',
   PERIODO_REQUERIDO: 'Elegí el mes que paga.',
   MODALIDAD_INVALIDA: 'Elegí si es por hora o mensual.',
+  MONTO_CONTADO_INVALIDO: 'Ingresá el efectivo que contaste (0 o más).',
+  NO_SE_PUEDE_JUSTIFICAR: 'Ese cierre ya tiene una justificación o no tiene diferencia.',
 }
 export const mensajeError = (error) => {
   if (!error) return ''

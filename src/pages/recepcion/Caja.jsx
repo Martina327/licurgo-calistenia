@@ -17,7 +17,10 @@ import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 //        frena si no alcanza. En efectivo va al turno; por transferencia, solo al dashboard.
 //   A4 · Subalquiler (CU16): salón, modalidad (por hora o mensual), quién alquila y medio
 //        de pago. El monto lo calcula la base con el precio vigente del salón (no se edita).
-//   Próximo paso: cierre del turno (A5).
+//   A5 · Cierre del turno (CU05): arqueo ciego. La recepcionista cuenta el efectivo y lo
+//        carga SIN ver cuánto debería haber. Recién al cerrar, el sistema calcula el esperado
+//        (inicial + efectivo cobrado en el turno) y muestra la diferencia. Si hay diferencia,
+//        pide justificarla (justificar_cierre, una sola vez). El turno cerrado no se edita.
 
 const formatearHora = (iso) =>
   new Date(iso).toLocaleString('es-AR', {
@@ -35,6 +38,8 @@ export default function Caja() {
   const { perfil } = useAuth()
   const [pestana, setPestana] = useState('Cuota')
   const [turno, setTurno] = useState(null) // turno abierto de este usuario, o null
+  const [cerrando, setCerrando] = useState(false)
+  const [resultado, setResultado] = useState(null) // resultado del cierre recién hecho
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
 
@@ -65,9 +70,22 @@ export default function Caja() {
 
       <Aviso tipo="error" texto={error} />
 
-      {turno ? (
+      {resultado ? (
+        <ResultadoCierre
+          resultado={resultado}
+          alTerminar={() => { setResultado(null); cargar() }}
+        />
+      ) : turno && cerrando ? (
         <>
           <TurnoAbierto turno={turno} />
+          <CerrarTurno
+            alCancelar={() => setCerrando(false)}
+            alCerrar={(r) => { setCerrando(false); setTurno(null); setResultado(r) }}
+          />
+        </>
+      ) : turno ? (
+        <>
+          <TurnoAbierto turno={turno} alCerrar={() => setCerrando(true)} />
           <div className="flex gap-1 overflow-x-auto border-b border-neutral-800">
             {PESTANAS.map((p) => (
               <button
@@ -147,7 +165,7 @@ function AbrirTurno({ alAbrir }) {
 // ---------------------------------------------------------------
 // Turno abierto
 // ---------------------------------------------------------------
-function TurnoAbierto({ turno }) {
+function TurnoAbierto({ turno, alCerrar }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-900 bg-emerald-950/40 px-4 py-3">
       <div className="flex items-center gap-3">
@@ -159,6 +177,11 @@ function TurnoAbierto({ turno }) {
           </p>
         </div>
       </div>
+      {alCerrar && (
+        <button onClick={alCerrar} className="rounded-lg border border-emerald-800 px-3 py-1.5 text-sm text-emerald-200 hover:bg-emerald-900/50">
+          Cerrar turno
+        </button>
+      )}
     </div>
   )
 }
@@ -848,5 +871,185 @@ function Subalquiler() {
         </div>
       )}
     </section>
+  )
+}
+
+// ---------------------------------------------------------------
+// Cierre del turno · arqueo ciego (CU05)
+// ---------------------------------------------------------------
+function CerrarTurno({ alCancelar, alCerrar }) {
+  const [monto, setMonto] = useState('')
+  const [comentario, setComentario] = useState('')
+  const [confirmar, setConfirmar] = useState(false)
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  const valor = Number(String(monto).replace(/\./g, '').replace(',', '.'))
+  const valido = monto.trim() !== '' && !Number.isNaN(valor) && valor >= 0
+
+  const pedirConfirmacion = (e) => {
+    e.preventDefault()
+    setError('')
+    if (!valido) return setError('Ingresá el efectivo que contaste en la caja (0 si no hay).')
+    setConfirmar(true)
+  }
+
+  const cerrar = async () => {
+    setError('')
+    setEnviando(true)
+    const { data, error } = await supabase.rpc('cerrar_turno', { p_monto_contado: valor, p_comentario: comentario || null })
+    setEnviando(false)
+    if (error) {
+      setConfirmar(false)
+      return setError(mensajeError(error))
+    }
+    const r = Array.isArray(data) ? data[0] : data
+    alCerrar({ ...r, comentario: comentario.trim() })
+  }
+
+  return (
+    <form onSubmit={pedirConfirmacion} className="max-w-md space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+      <div>
+        <h2 className="font-semibold">Cerrar turno de caja</h2>
+        <p className="text-sm text-neutral-400">
+          Contá todo el efectivo que hay en la caja, incluido el cambio con el que abriste, y anotalo.
+        </p>
+      </div>
+      <label className="block space-y-1 text-sm">
+        <span className="text-neutral-400">Efectivo contado</span>
+        <div className="flex items-center rounded-lg border border-neutral-700 bg-neutral-950 focus-within:border-neutral-400">
+          <span className="pl-3 text-neutral-500">$</span>
+          <input
+            value={monto}
+            onChange={(e) => { setMonto(e.target.value); setConfirmar(false) }}
+            inputMode="numeric"
+            placeholder="0"
+            className="w-full bg-transparent px-2 py-2 outline-none"
+            autoFocus
+          />
+        </div>
+      </label>
+      <label className="block space-y-1 text-sm">
+        <span className="text-neutral-400">Comentario <span className="text-neutral-500">(opcional)</span></span>
+        <textarea
+          value={comentario}
+          onChange={(e) => setComentario(e.target.value)}
+          rows={2}
+          placeholder="Ej.: se pagó un delivery con plata de la caja"
+          className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-neutral-400"
+        />
+      </label>
+
+      <Aviso tipo="error" texto={error} />
+
+      {confirmar ? (
+        <div className="space-y-2 rounded-lg border border-amber-900 bg-amber-950/40 p-3 text-sm">
+          <p className="text-amber-200">
+            ¿Cerrar el turno con {formatearPesos(valor)} contados? Una vez cerrado no se puede modificar.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setConfirmar(false)} className="rounded-lg border border-neutral-700 px-4 py-2 hover:bg-neutral-800">
+              Volver
+            </button>
+            <button type="button" onClick={cerrar} disabled={enviando} className="rounded-lg bg-white px-4 py-2 font-semibold text-neutral-950 disabled:opacity-50">
+              {enviando ? 'Cerrando…' : 'Sí, cerrar turno'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={alCancelar} className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800">
+            Cancelar
+          </button>
+          <button type="submit" className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950">
+            Cerrar turno
+          </button>
+        </div>
+      )}
+    </form>
+  )
+}
+
+function ResultadoCierre({ resultado, alTerminar }) {
+  const diferencia = Number(resultado.diferencia)
+  const [justificado, setJustificado] = useState(Boolean(resultado.comentario))
+  const [texto, setTexto] = useState('')
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  const justificar = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (!texto.trim()) return setError('Explicá brevemente la diferencia.')
+    setEnviando(true)
+    const { error } = await supabase.rpc('justificar_cierre', { p_turno_id: resultado.turno_id, p_comentario: texto.trim() })
+    setEnviando(false)
+    if (error) return setError(mensajeError(error))
+    setJustificado(true)
+  }
+
+  const estado =
+    diferencia === 0
+      ? { titulo: 'La caja cierra justo', clase: 'border-emerald-900 bg-emerald-950/40 text-emerald-200' }
+      : diferencia > 0
+        ? { titulo: `Sobran ${formatearPesos(diferencia)}`, clase: 'border-amber-900 bg-amber-950/40 text-amber-200' }
+        : { titulo: `Faltan ${formatearPesos(-diferencia)}`, clase: 'border-red-900 bg-red-950/40 text-red-200' }
+
+  const fila = (etiqueta, valor, fuerte) => (
+    <div className="flex justify-between">
+      <dt className="text-neutral-400">{etiqueta}</dt>
+      <dd className={`tabular-nums ${fuerte ? 'font-semibold' : ''}`}>{formatearPesos(valor)}</dd>
+    </div>
+  )
+
+  return (
+    <div className="max-w-md space-y-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+      <div>
+        <h2 className="font-semibold">Turno cerrado</h2>
+        <p className="text-sm text-neutral-400">El cierre quedó registrado y no se puede modificar.</p>
+      </div>
+
+      <dl className="space-y-1 text-sm">
+        {fila('Efectivo inicial', resultado.monto_inicial)}
+        {fila('Cobrado en efectivo', resultado.efectivo_cobrado)}
+        {fila('Debería haber', resultado.monto_esperado, true)}
+        {fila('Contaste', resultado.monto_contado, true)}
+      </dl>
+
+      <div className={`rounded-lg border px-3 py-2 font-medium ${estado.clase}`}>{estado.titulo}</div>
+
+      {diferencia !== 0 && !justificado && (
+        <form onSubmit={justificar} className="space-y-2">
+          <label className="block space-y-1 text-sm">
+            <span className="text-neutral-300">¿Por qué hay diferencia? Lo ve el dueño.</span>
+            <textarea
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              rows={2}
+              className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-neutral-400"
+              autoFocus
+            />
+          </label>
+          <Aviso tipo="error" texto={error} />
+          <div className="flex justify-end">
+            <button type="submit" disabled={enviando} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
+              {enviando ? 'Guardando…' : 'Guardar justificación'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {diferencia !== 0 && justificado && (
+        <p className="text-sm text-neutral-400">Justificación registrada{resultado.comentario ? `: ${resultado.comentario}` : ''}.</p>
+      )}
+
+      {(diferencia === 0 || justificado) && (
+        <div className="flex justify-end">
+          <button onClick={alTerminar} className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800">
+            Listo
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
