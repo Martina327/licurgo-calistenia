@@ -9,6 +9,7 @@ import Login from './pages/Login'
 import CambiarClave from './pages/CambiarClave'
 import DashboardIngresos from './pages/superadmin/DashboardIngresos'
 import DatosCobro from './pages/superadmin/DatosCobro'
+import Concurrencia from './pages/superadmin/Concurrencia'
 import Mostrador from './pages/recepcion/Mostrador'
 import Alumnos from './pages/recepcion/Alumnos'
 import Comprobantes from './pages/recepcion/Comprobantes'
@@ -43,6 +44,7 @@ export default function App() {
           <Route element={<RutaProtegida roles={['SuperAdmin']} />}>
             <Route path="/admin" element={<DashboardIngresos />} />
             <Route path="/admin/datos-cobro" element={<DatosCobro />} />
+            <Route path="/admin/concurrencia" element={<Concurrencia />} />
           </Route>
           <Route element={<RutaProtegida roles={['Recepcionista', 'SuperAdmin']} />}>
             <Route path="/recepcion" element={<Mostrador />} />

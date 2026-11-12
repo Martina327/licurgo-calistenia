@@ -53,6 +53,7 @@ const MENSAJES = {
   COMPROBANTE_YA_REVISADO: 'Ese comprobante ya fue revisado.',
   SIN_PLAN: 'El alumno no tiene un plan asignado.',
   MOTIVO_REQUERIDO: 'Indicá el motivo del rechazo.',
+  RANGO_INVALIDO: 'Revisá el período elegido.',
   MONTO_INVALIDO: 'El monto tiene que ser mayor a 0.',
   SIN_MONTO: 'El alumno no tiene plan: indicá el monto a acreditar.',
   COMPROBANTE_INEXISTENTE: 'No encontramos ese comprobante.',
@@ -82,6 +83,8 @@ export const mensajeError = (error) => {
 
 // Mensajes armados para WhatsApp: recepción los abre con un toque y los envía a mano (sin costo).
 export const MENSAJES_WHATSAPP = {
+  // RF13: el alumno escribe al dueño (sugerencias y consultas)
+  contacto: (nombre, apellido) => `Hola, soy ${nombre} ${apellido}, alumno de Licurgo Calistenia. Les escribo por una sugerencia / consulta: `,
   vencimiento: (nombre, dias) =>
     dias < 0
       ? `Hola ${nombre}, te escribimos de Licurgo Calistenia. Tu cuota venció hace ${Math.abs(dias)} día(s). Podés abonarla en recepción o subir el comprobante de transferencia en la app.`

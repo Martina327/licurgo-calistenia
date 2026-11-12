@@ -1,11 +1,13 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { formatearFecha, formatearPesos } from '../../lib/utils'
+import { supabase } from '../../lib/supabase'
+import { formatearFecha, formatearPesos, linkWhatsApp, MENSAJES_WHATSAPP } from '../../lib/utils'
 import { aprobadoReciente, situacionComprobantes } from '../../lib/comprobantes'
 import { useMiMembresia } from '../../lib/useMiMembresia'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import { Lista, Fila } from '../../components/alumno/Lista'
-import { IconoBanco, IconoCorazon, IconoRecibo } from '../../components/Iconos'
+import { IconoBanco, IconoCorazon, IconoRecibo, IconoWhatsApp } from '../../components/Iconos'
 
 // Colores de la tarjeta según el estado de la cuota (v_membresias)
 const TONO = {
@@ -19,6 +21,7 @@ const TONO = {
 // Pagar y el historial de comprobantes son pantallas aparte (/alumno/pagar, /alumno/comprobantes).
 export default function InicioAlumno() {
   const { cargando, membresia, comprobantes, error } = useMiMembresia()
+  const contacto = useWhatsAppContacto()
 
   if (cargando) return <Cargando />
   if (!membresia) return <p className="text-neutral-400">No encontramos tu ficha de alumno.</p>
@@ -65,6 +68,14 @@ export default function InicioAlumno() {
       <Lista titulo="Mi ficha">
         <Fila Icono={IconoCorazon} colorIcono="bg-rose-500/15 text-rose-300" titulo="Apto médico" valor={membresia.estado_certificado} />
       </Lista>
+
+      {contacto && (
+        <Lista titulo="Contacto">
+          <Fila href={linkWhatsApp(contacto, MENSAJES_WHATSAPP.contacto(membresia.nombre, membresia.apellido))}
+            Icono={IconoWhatsApp} colorIcono="bg-emerald-500/15 text-emerald-300"
+            titulo="Sugerencias y consultas" detalle="Escribile al gimnasio por WhatsApp" />
+        </Lista>
+      )}
 
       <p className="px-1 text-center text-xs text-neutral-500">Tu asistencia la registra recepción cuando llegás al gimnasio.</p>
     </div>
@@ -117,4 +128,13 @@ function TarjetaCuota({ m }) {
       </div>
     </section>
   )
+}
+
+// RF13: WhatsApp del gimnasio (el que cargó el dueño en "Datos de cobro" o su celular)
+function useWhatsAppContacto() {
+  const [numero, setNumero] = useState(null)
+  useEffect(() => {
+    supabase.rpc('whatsapp_contacto').then(({ data }) => setNumero(data || null))
+  }, [])
+  return numero
 }
