@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import InstalarApp from './InstalarApp'
 
 // Menú de cada rol. El SuperAdmin ve también las secciones de los demás roles.
 const MENU = {
@@ -69,6 +70,7 @@ export default function Layout() {
       <main className="mx-auto max-w-5xl px-4 py-6">
         <Outlet />
       </main>
+      <InstalarApp />
     </div>
   )
 }
