@@ -4,14 +4,18 @@ import { INICIO_POR_ROL } from './lib/utils'
 import RutaProtegida from './components/RutaProtegida'
 import Layout from './components/Layout'
 import Cargando from './components/Cargando'
+import ActualizacionApp from './components/ActualizacionApp'
 import Login from './pages/Login'
 import CambiarClave from './pages/CambiarClave'
 import DashboardIngresos from './pages/superadmin/DashboardIngresos'
 import Productos from './pages/superadmin/Productos'
 import Salones from './pages/superadmin/Salones'
+import DatosCobro from './pages/superadmin/DatosCobro'
+import Concurrencia from './pages/superadmin/Concurrencia'
 import Mostrador from './pages/recepcion/Mostrador'
 import Alumnos from './pages/recepcion/Alumnos'
 import Caja from './pages/recepcion/Caja'
+import Comprobantes from './pages/recepcion/Comprobantes'
 import PanelCoach from './pages/coach/PanelCoach'
 import CatalogoEjercicios from './pages/coach/CatalogoEjercicios'
 import RutinaAlumno from './pages/coach/RutinaAlumno'
@@ -19,6 +23,9 @@ import ObservacionesAlumno from './pages/coach/ObservacionesAlumno'
 import Plantillas from './pages/coach/Plantillas'
 import InicioAlumno from './pages/alumno/InicioAlumno'
 import MiRutina from './pages/alumno/MiRutina'
+import PagarCuota from './pages/alumno/PagarCuota'
+import Mensualidad from './pages/alumno/Mensualidad'
+import MisComprobantes from './pages/alumno/MisComprobantes'
 
 // "/" manda a cada uno a su pantalla de inicio según el rol (CU02)
 function Inicio() {
@@ -29,6 +36,8 @@ function Inicio() {
 
 export default function App() {
   return (
+    <>
+    <ActualizacionApp />
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/cambiar-clave" element={<CambiarClave />} />
@@ -40,11 +49,14 @@ export default function App() {
             <Route path="/admin" element={<DashboardIngresos />} />
             <Route path="/admin/productos" element={<Productos />} />
             <Route path="/admin/salones" element={<Salones />} />
+            <Route path="/admin/datos-cobro" element={<DatosCobro />} />
+            <Route path="/admin/concurrencia" element={<Concurrencia />} />
           </Route>
           <Route element={<RutaProtegida roles={['Recepcionista', 'SuperAdmin']} />}>
             <Route path="/recepcion" element={<Mostrador />} />
             <Route path="/recepcion/alumnos" element={<Alumnos />} />
             <Route path="/recepcion/caja" element={<Caja />} />
+            <Route path="/recepcion/comprobantes" element={<Comprobantes />} />
           </Route>
           <Route element={<RutaProtegida roles={['Coach', 'SuperAdmin']} />}>
             <Route path="/coach" element={<PanelCoach />} />
@@ -56,11 +68,15 @@ export default function App() {
           <Route element={<RutaProtegida roles={['Alumno']} />}>
             <Route path="/alumno" element={<InicioAlumno />} />
             <Route path="/alumno/rutina" element={<MiRutina />} />
+            <Route path="/alumno/mensualidad" element={<Mensualidad />} />
+            <Route path="/alumno/pagar" element={<PagarCuota />} />
+            <Route path="/alumno/comprobantes" element={<MisComprobantes />} />
           </Route>
         </Route>
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   )
 }
