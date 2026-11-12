@@ -14,7 +14,7 @@ Tres pestañas abajo, como una app de celular:
 
 ## Inicio: motivación para entrenar
 
-- **Foto y frase:** fotos del gimnasio (`public/img/gimnasio/`) que pasan solas cada 6 s (quietas si el celular pide menos movimiento) y una frase para entrenar distinta cada día (`FRASES` en `lib/racha.js`).
+- **Foto y frase:** 14 fotos del gimnasio del productor audiovisual (`public/img/gimnasio/`). Siempre arranca con el logo grande de la pared; cada foto trae su frase (`frasePara` en `lib/racha.js`) y pasan juntas cada 6 s (quietas si el celular pide menos movimiento). Las frases se corren un lugar por día.
 - **Qué cuenta como día entrenado:** el presente que marca recepción (`asistencias`) **o** completar un día de la rutina en la app (`dias_completados`). Un mismo día cuenta una vez.
 - **Meta semanal:** la cantidad de días de la rutina del alumno (si no tiene rutina, 3).
 - **Racha:** semanas seguidas cumpliendo la meta. Se cuenta por semanas y no por días porque en calistenia se descansa: una racha diaria se cortaría en cada día de descanso. La semana en curso suma cuando se cumple y, mientras tanto, no corta la racha.

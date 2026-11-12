@@ -80,7 +80,7 @@ export function mensajeSemana({ entrenados, objetivo, racha, entrenoHoy }) {
   return faltan === 1 ? 'Te falta 1 día para cumplir la semana.' : `Te faltan ${faltan} días para cumplir la semana.`
 }
 
-// Frases para entrenar: una por día (siempre la misma durante el día)
+// Frases para entrenar: cada foto del Inicio lleva una (ver frasePara)
 export const FRASES = [
   'La fuerza no viene de lo que podés hacer hoy, sino de superar lo que ayer no podías.',
   'Una repetición más. Siempre hay una más.',
@@ -98,8 +98,12 @@ export const FRASES = [
   'Entrenar es una forma de cuidarte.',
   'Hoy es un buen día para ser más fuerte.',
 ]
-export function fraseDelDia(hoy) {
+const diaDelAnio = (hoy) => {
   const [a, m, d] = hoy.split('-').map(Number)
-  const n = Math.floor((Date.UTC(a, m - 1, d) - Date.UTC(a, 0, 0)) / 86_400_000)
-  return FRASES[n % FRASES.length]
+  return Math.floor((Date.UTC(a, m - 1, d) - Date.UTC(a, 0, 0)) / 86_400_000)
 }
+// La frase de la foto número `k`: cambia junto con la foto y se corre un lugar por día
+export function frasePara(hoy, k = 0) {
+  return FRASES[(diaDelAnio(hoy) + k) % FRASES.length]
+}
+export const fraseDelDia = (hoy) => frasePara(hoy, 0)
