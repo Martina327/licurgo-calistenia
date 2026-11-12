@@ -80,15 +80,23 @@ export default function MiRutina() {
   const hechosSemana = completadosEnSemana(completados, hoy)
   const completo = tareas.length > 0 && tareas.every((t) => check.marcados.includes(t.id))
   const registradoHoy = (n) => completados.some((c) => c.numero_dia === n && c.fecha === hoy)
+  // Un solo día de la rutina por fecha: si hoy ya hizo uno, los demás quedan para otro día
+  const diaDeHoy = completados.find((c) => c.fecha === hoy)?.numero_dia ?? null
+  const bloqueado = (n) => diaDeHoy !== null && diaDeHoy !== n
 
   // Día completo → queda hecho en la semana. Se revisa siempre (no solo al tildar), así no se pierde
   // si el pedido falló o si las marcas ya estaban.
   const registrar = (n) => {
-    if (registradoHoy(n)) return
+    if (registradoHoy(n) || bloqueado(n)) return
     setCompletados((cs) => [...cs, { numero_dia: n, fecha: hoy, creado: new Date().toISOString() }])
     cola.current = cola.current.then(async () => {
       const { error } = await supabase.from('dias_completados').insert({ rutina_id: rutina.rutina_id, numero_dia: n })
-      if (error && error.code !== '23505') setError(mensajeError(error))
+      if (error?.code === '23505') {
+        // Otro día ya quedó registrado hoy (por ejemplo, desde otro celular): se vuelve a leer la semana
+        const { data } = await supabase.from('dias_completados').select('numero_dia, fecha, creado')
+          .eq('rutina_id', rutina.rutina_id).gte('fecha', lunesDe(hoy)).order('creado')
+        if (data) setCompletados(data)
+      } else if (error) setError(mensajeError(error))
     })
   }
   useEffect(() => {
@@ -110,12 +118,13 @@ export default function MiRutina() {
   }
   // Al abrir la pantalla de un día, ese pasa a ser el día del checklist de hoy
   useEffect(() => {
-    if (!rutina || !diaUrl || check.dia === diaUrl || !dias.some((d) => d.numero === diaUrl)) return
+    if (!rutina || !diaUrl || check.dia === diaUrl || !dias.some((d) => d.numero === diaUrl) || bloqueado(diaUrl)) return
     setDiaVista(diaUrl)
     actualizar({ ...check, fecha: hoyAR(), dia: diaUrl })
   }, [diaUrl, rutina?.rutina_id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const marcar = (id) => {
+    if (bloqueado(diaActual.numero)) return
     const quitando = check.marcados.includes(id)
     actualizar(alternarMarca({ ...check, fecha: hoyAR(), dia: diaActual.numero }, id))
     if (quitando) desregistrar(diaActual.numero)
@@ -146,6 +155,7 @@ export default function MiRutina() {
   const hecha = (t) => check.marcados.includes(t.id)
   const hechos = tareas.filter(hecha).length
   const yaHechoEstaSemana = hechosSemana.has(diaActual.numero) && !completo
+  const paraOtroDia = bloqueado(diaActual.numero)
   const bloques = [...new Set(tareas.map((t) => t.bloque))]
 
   // ----- Pantalla del día -----
@@ -158,11 +168,19 @@ export default function MiRutina() {
           <h1 className="text-2xl font-bold leading-tight text-white">Día {diaActual.numero}{diaActual.nombre && ` · ${diaActual.nombre}`}</h1>
         </header>
         <div className="sticky top-[57px] z-[5] -mx-4 mb-4 space-y-1.5 border-b border-neutral-800 bg-neutral-950/95 px-4 pb-3 pt-2.5 backdrop-blur">
-          <BarraProgreso tareas={tareas} hecha={hecha} hechos={hechos} onReiniciar={reiniciar} />
-          {yaHechoEstaSemana && <p className="text-xs text-neutral-400">✓ Este día ya lo hiciste esta semana.</p>}
+          {paraOtroDia ? (
+            <p className="text-sm text-neutral-300">
+              Hoy ya entrenaste el Día {diaDeHoy}. Este lo podés mirar, pero lo marcás otro día.
+            </p>
+          ) : (
+            <BarraProgreso tareas={tareas} hecha={hecha} hechos={hechos} onReiniciar={reiniciar} />
+          )}
+          {yaHechoEstaSemana && !paraOtroDia && <p className="text-xs text-neutral-400">✓ Este día ya lo hiciste esta semana.</p>}
         </div>
-        <ContenidoDia tareas={tareas} bloques={bloques} hecha={hecha} marcar={marcar} />
-        {!completo && hechos > 0 && !hechosSemana.has(diaActual.numero) && (
+        <div className={paraOtroDia ? 'opacity-70' : ''}>
+          <ContenidoDia tareas={tareas} bloques={bloques} hecha={paraOtroDia ? () => false : hecha} marcar={marcar} />
+        </div>
+        {!paraOtroDia && !completo && hechos > 0 && !hechosSemana.has(diaActual.numero) && (
           <div className="mt-6">
             {confirmarFin ? (
               <div className="space-y-3 rounded-2xl border border-neutral-700 bg-neutral-900 p-4">
@@ -208,6 +226,7 @@ export default function MiRutina() {
             {hechosSemana.size >= dias.length
               ? '🎉 Completaste todos los días de esta semana.'
               : `Esta semana: ${hechosSemana.size} de ${dias.length} días hechos.`}
+            {diaDeHoy !== null && hechosSemana.size < dias.length && ' Hoy ya entrenaste: mañana seguís con el próximo.'}
           </p>
         )}
       </header>
@@ -217,7 +236,7 @@ export default function MiRutina() {
           const hecho = hechosSemana.has(d.numero)
           const { total, hechas } = marcadosDe(d)
           const enCurso = hechas > 0 && hechas < total
-          const toca = !hecho && d.numero === diaVistaInicial.current
+          const toca = !hecho && diaDeHoy === null && d.numero === diaVistaInicial.current
           return (
             <li key={d.numero}>
               <Link to={`/alumno/rutina/dia/${d.numero}`}
