@@ -8,13 +8,14 @@ import { Atras, IconoInicio, IconoMensualidad, IconoRutina, IconoSalir } from '.
 const SECUNDARIAS = [
   { ruta: /^\/alumno\/pagar$/, titulo: 'Pagar por transferencia', volver: '/alumno/mensualidad' },
   { ruta: /^\/alumno\/comprobantes$/, titulo: 'Mis comprobantes', volver: '/alumno/mensualidad' },
+  { ruta: /^\/alumno\/apto$/, titulo: 'Apto médico', volver: '/alumno/mensualidad' },
   { ruta: /^\/alumno\/rutina\/dia\/\d+$/, titulo: 'Mi rutina', volver: '/alumno/rutina' },
 ]
 
 const PESTANIAS = [
   { to: '/alumno', texto: 'Inicio', Icono: IconoInicio, end: true },
   { to: '/alumno/rutina', texto: 'Rutina', Icono: IconoRutina },
-  { to: '/alumno/mensualidad', texto: 'Mensualidad', Icono: IconoMensualidad, incluye: Object.keys({ '/alumno/pagar': 1, '/alumno/comprobantes': 1 }) },
+  { to: '/alumno/mensualidad', texto: 'Mensualidad', Icono: IconoMensualidad, incluye: ['/alumno/pagar', '/alumno/comprobantes', '/alumno/apto'] },
 ]
 
 // La app del alumno con forma de app de celular (PWA, RNF03):

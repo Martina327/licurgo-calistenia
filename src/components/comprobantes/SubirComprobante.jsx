@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { mensajeError } from '../../lib/utils'
-import { ACEPTA, BUCKET, leerMonto, rutaArchivo, validarArchivo } from '../../lib/comprobantes'
+import { BUCKET, leerMonto, rutaArchivo, validarArchivo } from '../../lib/comprobantes'
 import Aviso from '../Aviso'
+import ElegirArchivo from './ElegirArchivo'
 
 // CU07 · Subir comprobante de transferencia (RF02, RNF02)
 //   1. El archivo va al bucket privado `comprobantes`, en la carpeta del alumno.
@@ -11,28 +12,9 @@ import Aviso from '../Aviso'
 //   archivos propios que no quedaron registrados).
 export default function SubirComprobante({ alumnoId, montoSugerido, onSubido }) {
   const [archivo, setArchivo] = useState(null)
-  const [vista, setVista] = useState(null) // URL local para la miniatura
   const [monto, setMonto] = useState(montoSugerido ? String(Math.round(montoSugerido)) : '')
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
-  const input = useRef(null)
-
-  useEffect(() => () => vista && URL.revokeObjectURL(vista), [vista])
-
-  const elegir = (ev) => {
-    const f = ev.target.files?.[0] ?? null
-    setError('')
-    const problema = f && validarArchivo(f)
-    if (problema) {
-      setError(problema)
-      setArchivo(null)
-      setVista(null)
-      ev.target.value = ''
-      return
-    }
-    setArchivo(f)
-    setVista(f && f.type.startsWith('image/') ? URL.createObjectURL(f) : null)
-  }
 
   const enviar = async (ev) => {
     ev.preventDefault()
@@ -61,27 +43,13 @@ export default function SubirComprobante({ alumnoId, montoSugerido, onSubido }) 
     }
     setEnviando(false)
     setArchivo(null)
-    setVista(null)
     onSubido()
   }
 
   return (
     <form onSubmit={enviar} className="space-y-3">
-      <input ref={input} type="file" accept={ACEPTA} onChange={elegir} className="hidden" id="archivo-comprobante" />
-      <label htmlFor="archivo-comprobante"
-        className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-neutral-700 px-3 py-3 active:bg-neutral-800">
-        {vista ? (
-          <img src={vista} alt="Vista previa del comprobante" className="h-14 w-14 shrink-0 rounded-md object-cover" />
-        ) : (
-          <span aria-hidden className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-neutral-800 text-xl">
-            {archivo ? '📄' : '＋'}
-          </span>
-        )}
-        <span className="min-w-0 text-sm">
-          <span className="block truncate text-neutral-100">{archivo ? archivo.name : 'Elegir foto o PDF'}</span>
-          <span className="block text-neutral-500">{archivo ? 'Tocá para cambiarlo' : 'Captura del banco o PDF, hasta 5 MB'}</span>
-        </span>
-      </label>
+      <ElegirArchivo id="archivo-comprobante" archivo={archivo} onElegir={setArchivo} onError={setError}
+        ayuda="Captura del banco o PDF, hasta 5 MB" />
 
       <label className="block text-sm">
         <span className="text-neutral-300">Monto que transferiste</span>
