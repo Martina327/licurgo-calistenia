@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext'
 // Menú de cada rol. El SuperAdmin ve también las secciones de los demás roles.
 const MENU = {
   SuperAdmin: [
-    { to: '/admin', texto: 'Ingresos' },
+    { to: '/admin', texto: 'Ingresos', end: true },
+    { to: '/admin/productos', texto: 'Productos' },
     { to: '/recepcion', texto: 'Mostrador', end: true },
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
     { to: '/recepcion/caja', texto: 'Caja' },

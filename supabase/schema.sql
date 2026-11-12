@@ -55,7 +55,8 @@ DROP FUNCTION IF EXISTS public.fn_set_fecha_actualizacion, public.fn_validar_rol
     -- Pareja A · A1
     public._plan_unico, public.marcar_clave_cambiada, public.alta_clase_prueba,
     public._alumno_existente, public.editar_alumno, public.dar_baja_alumno,
-    public.reactivar_alumno, public._normalizar_email, public._datos_faltantes CASCADE;
+    public.reactivar_alumno, public._normalizar_email, public._datos_faltantes,
+    public.cargar_stock CASCADE;
 
 -- Usuarios mock de Supabase Auth (por DNI)
 DELETE FROM auth.users
@@ -2410,6 +2411,46 @@ BEGIN
 END $$;
 
 REVOKE EXECUTE ON FUNCTION public._extender_membresia(UUID) FROM PUBLIC, anon, authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 19.14 PAREJA A · A3 KIOSCO: INGRESO DE MERCADERÍA (migración 20261111_01)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  A3 · Kiosco: productos y stock (CU14) · Pareja A
+--  Ingreso de mercadería
+--
+--  Correr en el SQL Editor de Supabase. Es re-ejecutable.
+--
+--  Decisión del dueño (11/11/2026): los productos los maneja SOLO el
+--  SuperAdmin (alta, precios, stock y baja). Ya lo garantiza la política
+--  productos_write; recepción solo lee y vende.
+--
+--  cargar_stock suma la mercadería que llega en una sola operación
+--  (stock = stock + n), así no pisa una venta que ocurra al mismo tiempo.
+-- =====================================================================
+
+CREATE OR REPLACE FUNCTION public.cargar_stock(p_producto_id UUID, p_cantidad INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_stock INTEGER;
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    IF p_cantidad IS NULL OR p_cantidad <= 0 THEN
+        RAISE EXCEPTION 'CANTIDAD_INVALIDA';
+    END IF;
+    UPDATE public.productos SET stock = stock + p_cantidad
+     WHERE id = p_producto_id
+    RETURNING stock INTO v_stock;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'PRODUCTO_INEXISTENTE: %', p_producto_id;
+    END IF;
+    RETURN v_stock;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.cargar_stock(UUID, INTEGER) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.cargar_stock(UUID, INTEGER) TO authenticated;
 
 
 -- ---------------------------------------------------------------------

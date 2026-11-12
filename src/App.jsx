@@ -7,6 +7,7 @@ import Cargando from './components/Cargando'
 import Login from './pages/Login'
 import CambiarClave from './pages/CambiarClave'
 import DashboardIngresos from './pages/superadmin/DashboardIngresos'
+import Productos from './pages/superadmin/Productos'
 import Mostrador from './pages/recepcion/Mostrador'
 import Alumnos from './pages/recepcion/Alumnos'
 import Caja from './pages/recepcion/Caja'
@@ -36,6 +37,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route element={<RutaProtegida roles={['SuperAdmin']} />}>
             <Route path="/admin" element={<DashboardIngresos />} />
+            <Route path="/admin/productos" element={<Productos />} />
           </Route>
           <Route element={<RutaProtegida roles={['Recepcionista', 'SuperAdmin']} />}>
             <Route path="/recepcion" element={<Mostrador />} />

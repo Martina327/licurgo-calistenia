@@ -69,6 +69,8 @@ const MENSAJES = {
   EMAIL_REQUERIDO: 'El email es obligatorio.',
   FICHA_INCOMPLETA: 'Falta completar la ficha del alumno (fecha de nacimiento, domicilio y contacto de emergencia) antes de cobrar la primera cuota.',
   FECHA_NACIMIENTO_INVALIDA: 'Revisá la fecha de nacimiento.',
+  CANTIDAD_INVALIDA: 'La cantidad tiene que ser un número mayor a 0.',
+  PRODUCTO_INEXISTENTE: 'Ese producto ya no existe. Recargá la pantalla.',
 }
 export const mensajeError = (error) => {
   if (!error) return ''
