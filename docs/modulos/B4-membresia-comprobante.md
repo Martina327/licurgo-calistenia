@@ -86,3 +86,11 @@ Migración `supabase/migrations/20261112_01_b4_b5_comprobantes.sql` (también en
 - **Base (Postgres local con A2–A5 aplicadas):** el alumno ve los datos de cobro y no los puede editar, tampoco recepción; el dueño sí. Un pendiente por alumno. No puede registrar un archivo de otra carpeta. Borra un huérfano propio, pero no uno registrado. La migración corre dos veces sin error.
 - **Unitarias** (`lib/comprobantes.js`): validación de archivo, ruta, vista previa del vencimiento (misma regla que A2), estado de la tarjeta, montos (`26.000`, `$ 26.000`, `26000,50`), CBU/alias/CUIT.
 - **Navegador:** flujo completo alumno → recepción → alumno en celular y escritorio.
+
+## Cambiar la cuenta de cobro (12/11)
+
+El dueño no siempre cobra en la misma cuenta (un mes `Gero.gh2`, otro mes otra).
+
+- **SuperAdmin → Datos de cobro:** arriba se ve la *cuenta que ven los alumnos hoy*. **Cambiar de cuenta** vacía alias, CBU, titular, banco y CUIT para cargar la nueva sin mezclar datos (con el alias alcanza). Hasta que toca *Guardar*, los alumnos siguen viendo la anterior.
+- **Cada comprobante guarda a qué cuenta transfirió el alumno** (`comprobantes_pago.cuenta_destino`, lo completa un trigger con la cuenta vigente al subirlo; migración `20261112_05`).
+- **Recepción** ve *Transfirió a: Gero.gh2* en el detalle del comprobante, así sabe en qué cuenta buscar la transferencia aunque el alias ya haya cambiado.
