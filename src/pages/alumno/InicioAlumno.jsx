@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { formatearFecha, formatearPesos, mensajeError } from '../../lib/utils'
-import { BUCKET, situacionComprobantes } from '../../lib/comprobantes'
+import { BUCKET, aprobadoReciente, situacionComprobantes } from '../../lib/comprobantes'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import DatosTransferencia from '../../components/comprobantes/DatosTransferencia'
@@ -121,7 +121,7 @@ export default function InicioAlumno() {
           </div>
         ) : (
           <>
-            {ultimo?.estado === 'Aprobado' && (
+            {aprobadoReciente(ultimo) && (
               <p className="rounded-lg bg-emerald-950/60 px-3 py-2 text-sm text-emerald-200">
                 Tu último comprobante fue aprobado el {formatearFecha(ultimo.revisado_at)}. ¡Gracias!
               </p>

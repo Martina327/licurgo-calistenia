@@ -75,6 +75,10 @@ export function situacionComprobantes(comprobantes) {
   return { modo: 'subir', ultimo }
 }
 
+// "Tu último comprobante fue aprobado": solo si fue hace pocos días (no el del mes pasado)
+export const aprobadoReciente = (c, ahora = Date.now(), dias = 7) =>
+  c?.estado === 'Aprobado' && Boolean(c.revisado_at) && ahora - new Date(c.revisado_at).getTime() < dias * 86_400_000
+
 // Monto que escribe el alumno o recepción: acepta "26.000", "26000", "26000,50"
 export function leerMonto(texto) {
   const limpio = String(texto ?? '').trim().replace(/\$|\s/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.')
