@@ -69,7 +69,7 @@ export default function SubirComprobante({ alumnoId, montoSugerido, onSubido }) 
     <form onSubmit={enviar} className="space-y-3">
       <input ref={input} type="file" accept={ACEPTA} onChange={elegir} className="hidden" id="archivo-comprobante" />
       <label htmlFor="archivo-comprobante"
-        className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-neutral-600 px-3 py-3 hover:border-neutral-400">
+        className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-neutral-700 px-3 py-3 active:bg-neutral-800">
         {vista ? (
           <img src={vista} alt="Vista previa del comprobante" className="h-14 w-14 shrink-0 rounded-md object-cover" />
         ) : (
@@ -85,17 +85,17 @@ export default function SubirComprobante({ alumnoId, montoSugerido, onSubido }) 
 
       <label className="block text-sm">
         <span className="text-neutral-300">Monto que transferiste</span>
-        <div className="mt-1 flex items-center rounded-lg border border-neutral-700 bg-neutral-950 focus-within:border-neutral-400">
+        <div className="mt-1 flex items-center rounded-xl border border-neutral-700 bg-neutral-950 focus-within:border-neutral-400">
           <span className="pl-3 text-neutral-500">$</span>
           <input value={monto} onChange={(e) => setMonto(e.target.value)} inputMode="decimal"
-            className="w-full bg-transparent px-2 py-2 text-sm outline-none" />
+            className="w-full bg-transparent px-2 py-2.5 outline-none" />
         </div>
       </label>
 
       {error && <Aviso tipo="error" texto={error} />}
 
       <button disabled={enviando || !archivo}
-        className="w-full rounded-lg bg-white py-2.5 text-sm font-semibold text-neutral-950 disabled:opacity-40">
+        className="w-full rounded-xl bg-white py-3 font-semibold text-neutral-950 disabled:bg-neutral-800 disabled:text-neutral-500">
         {enviando ? 'Enviando…' : 'Enviar comprobante'}
       </button>
     </form>

@@ -102,7 +102,7 @@ export default function DatosCobro() {
 
       <section className="space-y-2">
         <h2 className="text-sm font-medium text-neutral-300">Así lo ve el alumno</h2>
-        <div className="max-w-md">
+        <div className="max-w-md overflow-hidden rounded-2xl bg-neutral-900">
           <DatosTransferencia datos={guardados} />
         </div>
       </section>

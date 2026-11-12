@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import InstalarApp from './InstalarApp'
+import LayoutAlumno from './LayoutAlumno'
 
 // Menú de cada rol. El SuperAdmin ve también las secciones de los demás roles.
 const MENU = {
@@ -26,13 +27,16 @@ const MENU = {
     { to: '/coach/plantillas', texto: 'Plantillas' },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
   ],
-  Alumno: [
-    { to: '/alumno', texto: 'Mi membresía', corto: 'Membresía', end: true },
-    { to: '/alumno/rutina', texto: 'Mi rutina' },
-  ],
 }
 
 export default function Layout() {
+  const { perfil } = useAuth()
+  // El alumno usa la app del celular: pestañas abajo y pantallas secundarias
+  if (perfil.rol === 'Alumno') return <LayoutAlumno />
+  return <LayoutStaff />
+}
+
+function LayoutStaff() {
   const { perfil, cerrarSesion } = useAuth()
   const items = MENU[perfil.rol] ?? []
   const pendientes = useComprobantesPendientes(items.some((i) => i.contador === 'comprobantes'))

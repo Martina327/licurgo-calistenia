@@ -1,193 +1,120 @@
-import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
-import { useAuth } from '../../context/AuthContext'
-import { formatearFecha, formatearPesos, mensajeError } from '../../lib/utils'
-import { BUCKET, aprobadoReciente, situacionComprobantes } from '../../lib/comprobantes'
+import { formatearFecha, formatearPesos } from '../../lib/utils'
+import { aprobadoReciente, situacionComprobantes } from '../../lib/comprobantes'
+import { useMiMembresia } from '../../lib/useMiMembresia'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
-import DatosTransferencia from '../../components/comprobantes/DatosTransferencia'
-import SubirComprobante from '../../components/comprobantes/SubirComprobante'
-import EstadoComprobante from '../../components/comprobantes/EstadoComprobante'
+import { Lista, Fila } from '../../components/alumno/Lista'
+import { IconoBanco, IconoCorazon, IconoRecibo } from '../../components/Iconos'
 
-const COLOR_ESTADO = {
-  'Al día': 'bg-emerald-950 text-emerald-300',
-  'Por vencer': 'bg-amber-950 text-amber-300',
-  Vencida: 'bg-red-950 text-red-300',
-  'Sin membresía': 'bg-neutral-800 text-neutral-300',
+// Colores de la tarjeta según el estado de la cuota (v_membresias)
+const TONO = {
+  'Al día': { borde: 'border-emerald-900/70', fondo: 'from-emerald-950/80', chip: 'bg-emerald-500/15 text-emerald-300', barra: 'bg-emerald-400' },
+  'Por vencer': { borde: 'border-amber-900/70', fondo: 'from-amber-950/80', chip: 'bg-amber-500/15 text-amber-300', barra: 'bg-amber-400' },
+  Vencida: { borde: 'border-red-900/70', fondo: 'from-red-950/80', chip: 'bg-red-500/15 text-red-300', barra: 'bg-red-500' },
+  'Sin membresía': { borde: 'border-neutral-800', fondo: 'from-neutral-900', chip: 'bg-neutral-700/40 text-neutral-300', barra: 'bg-neutral-500' },
 }
 
-// Mi membresía (B4 · CU07, RF02, RNF02)
-//   · Estado de la cuota, vencimiento y aviso 3 días antes (v_membresias: "Por vencer")
-//   · Datos para transferir (CBU, alias) y subida del comprobante al bucket privado
-//   · Historial de comprobantes: en revisión, aprobado o rechazado con el motivo
-// La asistencia (CU03) NO la marca el alumno: la registra recepción al llegar.
+// Inicio del alumno (B4): de un vistazo, cómo está su cuota.
+// Pagar y el historial de comprobantes son pantallas aparte (/alumno/pagar, /alumno/comprobantes).
 export default function InicioAlumno() {
-  const { perfil } = useAuth()
-  const [membresia, setMembresia] = useState(null)
-  const [datosCobro, setDatosCobro] = useState(null)
-  const [comprobantes, setComprobantes] = useState([])
-  const [cargando, setCargando] = useState(true)
-  const [aviso, setAviso] = useState(null)
-  const [verTodos, setVerTodos] = useState(false)
-
-  const cargar = useCallback(async () => {
-    // El RLS hace que el alumno solo reciba sus propias filas
-    const [m, d, c] = await Promise.all([
-      supabase.from('v_membresias').select('*').maybeSingle(),
-      supabase.from('datos_cobro').select('titular, banco, cbu, alias, cuit').maybeSingle(),
-      supabase.from('v_comprobantes')
-        .select('id, archivo_path, monto_declarado, monto_acreditado, estado, motivo_rechazo, created_at, revisado_at')
-        .order('created_at', { ascending: false }),
-    ])
-    const error = m.error ?? d.error ?? c.error
-    if (error) setAviso({ tipo: 'error', texto: mensajeError(error) })
-    setMembresia(m.data)
-    setDatosCobro(d.data)
-    setComprobantes(c.data ?? [])
-    setCargando(false)
-  }, [])
-
-  useEffect(() => { cargar() }, [cargar])
-
-  const verArchivo = async (c) => {
-    // Bucket privado: link firmado que dura 1 minuto
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(c.archivo_path, 60)
-    if (error) return setAviso({ tipo: 'error', texto: 'No se pudo abrir el archivo.' })
-    window.open(data.signedUrl, '_blank', 'noopener')
-  }
+  const { cargando, membresia, comprobantes, error } = useMiMembresia()
 
   if (cargando) return <Cargando />
   if (!membresia) return <p className="text-neutral-400">No encontramos tu ficha de alumno.</p>
 
-  const { estado_membresia: estado, dias_restantes: dias } = membresia
-  const mostrarAlerta = estado === 'Por vencer' || estado === 'Vencida'
   const { modo, ultimo } = situacionComprobantes(comprobantes)
-  const historial = verTodos ? comprobantes : comprobantes.slice(0, 3)
+  const pendiente = modo === 'pendiente'
 
   return (
-    <div className="mx-auto max-w-md space-y-4">
-      <h1 className="text-xl font-semibold">Hola, {membresia.nombre}</h1>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold">Hola, {membresia.nombre}</h1>
+      {error && <Aviso tipo="error" texto={error} />}
 
-      {aviso && <Aviso {...aviso} />}
+      <TarjetaCuota m={membresia} />
 
-      {mostrarAlerta && (
-        <div className={`rounded-xl px-4 py-3 text-sm ${COLOR_ESTADO[estado]}`}>
-          {estado === 'Vencida'
-            ? `Tu membresía venció hace ${Math.abs(dias)} día(s). Renovala para seguir entrenando.`
-            : dias === 0
-              ? 'Tu membresía vence hoy.'
-              : `Tu membresía vence en ${dias} día(s).`}
-          {modo !== 'pendiente' && (
-            <a href="#pagar" className="mt-1 block font-semibold underline underline-offset-2">Pagá por transferencia ↓</a>
-          )}
-        </div>
+      {/* Estado del último comprobante, solo si hay algo que contar */}
+      {pendiente && (
+        <Link to="/alumno/comprobantes" className="flex items-center gap-3 rounded-2xl bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400" />
+          <span className="flex-1">Tu comprobante está en revisión</span>
+          <span className="text-amber-200/60">{formatearFecha(ultimo.created_at)}</span>
+        </Link>
+      )}
+      {modo === 'rechazado' && (
+        <Link to="/alumno/pagar" className="block rounded-2xl bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <span className="font-semibold">Rechazamos tu comprobante.</span> {ultimo.motivo_rechazo}.
+          <span className="mt-0.5 block font-semibold underline underline-offset-2">Enviar uno nuevo</span>
+        </Link>
+      )}
+      {modo === 'subir' && aprobadoReciente(ultimo) && (
+        <p className="rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+          Recibimos tu pago del {formatearFecha(ultimo.revisado_at)}. ¡Gracias!
+        </p>
       )}
 
-      {membresia.estado_alumno === 'En clase de prueba' && (
-        <div className="rounded-xl bg-neutral-800 px-4 py-3 text-sm text-neutral-200">
-          Estás en tu clase de prueba. Cuando abones la primera cuota (en recepción o por transferencia), tu cuenta pasa a activa.
-        </div>
-      )}
+      <Lista titulo="Pagos">
+        <Fila to="/alumno/pagar" Icono={IconoBanco} colorIcono="bg-sky-500/15 text-sky-300"
+          titulo="Pagar por transferencia"
+          detalle={pendiente ? 'Ya enviaste uno, está en revisión' : 'Alias, CBU y subir el comprobante'} />
+        <Fila to="/alumno/comprobantes" Icono={IconoRecibo} colorIcono="bg-violet-500/15 text-violet-300"
+          titulo="Mis comprobantes"
+          detalle={comprobantes.length ? `${comprobantes.length} enviado${comprobantes.length === 1 ? '' : 's'}` : 'Todavía no enviaste ninguno'} />
+      </Lista>
 
-      <section className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-medium">Mi membresía</h2>
-          <span className={`rounded-full px-2.5 py-0.5 text-xs ${COLOR_ESTADO[estado]}`}>{estado}</span>
-        </div>
-        <dl className="grid grid-cols-2 gap-y-2 text-sm">
-          <dt className="text-neutral-400">Plan</dt>
-          <dd>{membresia.plan ?? '—'}</dd>
-          <dt className="text-neutral-400">Cuota</dt>
-          <dd>{formatearPesos(membresia.precio_plan)}</dd>
-          <dt className="text-neutral-400">Vence</dt>
-          <dd>{formatearFecha(membresia.fecha_vencimiento)}</dd>
-          <dt className="text-neutral-400">Días restantes</dt>
-          <dd>{dias ?? '—'}</dd>
-          <dt className="text-neutral-400">Apto médico</dt>
-          <dd>{membresia.estado_certificado}</dd>
-        </dl>
-      </section>
+      <Lista titulo="Mi ficha">
+        <Fila Icono={IconoCorazon} colorIcono="bg-rose-500/15 text-rose-300" titulo="Apto médico" valor={membresia.estado_certificado} />
+      </Lista>
 
-      <section id="pagar" className="scroll-mt-20 space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-        <h2 className="font-medium">Pagar por transferencia</h2>
-
-        {modo === 'pendiente' ? (
-          <div className="rounded-lg bg-amber-950/60 px-3 py-3 text-sm text-amber-200">
-            <p className="font-semibold">Tu comprobante está en revisión</p>
-            <p className="mt-0.5 text-amber-200/80">
-              Lo enviaste el {formatearFecha(ultimo.created_at)}. Cuando recepción lo apruebe, tu vencimiento se corre 30 días.
-            </p>
-          </div>
-        ) : (
-          <>
-            {aprobadoReciente(ultimo) && (
-              <p className="rounded-lg bg-emerald-950/60 px-3 py-2 text-sm text-emerald-200">
-                Tu último comprobante fue aprobado el {formatearFecha(ultimo.revisado_at)}. ¡Gracias!
-              </p>
-            )}
-            {modo === 'rechazado' && (
-              <div className="rounded-lg bg-red-950/70 px-3 py-3 text-sm text-red-200">
-                <p className="font-semibold">Rechazamos tu último comprobante</p>
-                <p className="mt-0.5">Motivo: {ultimo.motivo_rechazo}</p>
-                <p className="mt-1 text-red-200/80">Revisalo y enviá uno nuevo.</p>
-              </div>
-            )}
-            <ol className="space-y-3 text-sm">
-              <li>
-                <p className="mb-2 text-neutral-300"><Paso n={1} /> Transferí la cuota a esta cuenta:</p>
-                <DatosTransferencia datos={datosCobro} monto={membresia.precio_plan} />
-              </li>
-              <li>
-                <p className="mb-2 text-neutral-300"><Paso n={2} /> Subí el comprobante:</p>
-                <SubirComprobante key={comprobantes.length} alumnoId={perfil.id} montoSugerido={membresia.precio_plan}
-                  onSubido={() => { setAviso({ tipo: 'ok', texto: 'Comprobante enviado. Recepción lo va a revisar.' }); cargar() }} />
-              </li>
-            </ol>
-          </>
-        )}
-
-        {comprobantes.length > 0 && (
-          <div className="space-y-2 border-t border-neutral-800 pt-3">
-            <h3 className="text-sm font-medium text-neutral-300">Mis comprobantes</h3>
-            <ul className="space-y-1.5">
-              {historial.map((c) => (
-                <li key={c.id} className="flex items-center gap-2 text-sm">
-                  <span className="w-20 shrink-0 text-neutral-400">{formatearFecha(c.created_at)}</span>
-                  <span className="min-w-0 flex-1 truncate">
-                    {formatearPesos(c.monto_acreditado ?? c.monto_declarado)}
-                    {c.estado === 'Rechazado' && <span className="text-neutral-500"> · {c.motivo_rechazo}</span>}
-                  </span>
-                  <EstadoComprobante estado={c.estado} />
-                  <button onClick={() => verArchivo(c)} className="shrink-0 text-xs text-neutral-400 underline hover:text-white">Ver</button>
-                </li>
-              ))}
-            </ul>
-            {comprobantes.length > 3 && (
-              <button onClick={() => setVerTodos((v) => !v)} className="text-xs text-neutral-400 hover:text-white">
-                {verTodos ? 'Ver menos' : `Ver todos (${comprobantes.length})`}
-              </button>
-            )}
-          </div>
-        )}
-      </section>
-
-      <Link
-        to="/alumno/rutina"
-        className="block w-full rounded-xl border border-neutral-700 py-3 text-center font-semibold text-neutral-100 hover:bg-neutral-900"
-      >
-        Ver mi rutina
-      </Link>
-
-      <p className="text-center text-xs text-neutral-500">Tu asistencia la registra recepción cuando llegás al gimnasio.</p>
+      <p className="px-1 text-center text-xs text-neutral-500">Tu asistencia la registra recepción cuando llegás al gimnasio.</p>
     </div>
   )
 }
 
-function Paso({ n }) {
+function TarjetaCuota({ m }) {
+  const estado = m.estado_membresia
+  const t = TONO[estado] ?? TONO['Sin membresía']
+  const dias = m.dias_restantes
+  const prueba = m.estado_alumno === 'En clase de prueba'
+  const llenado = estado === 'Vencida' ? 100 : Math.max(4, Math.min(100, ((dias ?? 0) / 30) * 100))
+
   return (
-    <span className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-neutral-700 text-xs font-semibold text-neutral-100">
-      {n}
-    </span>
+    <section className={`rounded-3xl border ${t.borde} bg-gradient-to-b ${t.fondo} to-neutral-900 p-5`}>
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-neutral-300">Mi cuota</span>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${t.chip}`}>{prueba ? 'Clase de prueba' : estado}</span>
+      </div>
+
+      {prueba ? (
+        <div className="mt-4 space-y-1">
+          <p className="text-2xl font-bold">¡Te damos la bienvenida!</p>
+          <p className="text-sm text-neutral-300">Cuando abones la primera cuota, en recepción o por transferencia, tu cuenta pasa a activa.</p>
+        </div>
+      ) : estado === 'Vencida' ? (
+        <div className="mt-3">
+          <p className="text-5xl font-bold tracking-tight">Vencida</p>
+          <p className="mt-1 text-sm text-red-200">Hace {Math.abs(dias)} día{Math.abs(dias) === 1 ? '' : 's'} · renovala para seguir entrenando</p>
+        </div>
+      ) : (
+        <div className="mt-3">
+          <p className="flex items-baseline gap-2">
+            <span className="text-6xl font-bold tabular-nums tracking-tight">{dias}</span>
+            <span className="text-lg text-neutral-300">{dias === 1 ? 'día' : 'días'}</span>
+          </p>
+          <p className="text-sm text-neutral-300">{dias === 0 ? 'Vence hoy' : `Vence el ${formatearFecha(m.fecha_vencimiento)}`}</p>
+        </div>
+      )}
+
+      {!prueba && (
+        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-neutral-800" aria-hidden>
+          <div className={`h-full rounded-full ${t.barra}`} style={{ width: `${llenado}%` }} />
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center justify-between text-sm">
+        <span className="text-neutral-400">{m.plan ?? 'Sin plan'}</span>
+        <span className="font-semibold">{formatearPesos(m.precio_plan)}<span className="font-normal text-neutral-400"> /mes</span></span>
+      </div>
+    </section>
   )
 }
