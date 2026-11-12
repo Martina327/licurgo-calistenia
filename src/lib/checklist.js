@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------
 // Checklist de la rutina del alumno (CU11 · RNF04)
 // Vive solo en el navegador (localStorage): no se guarda en la base.
-//   · Se reinicia cada día (si la fecha guardada no es hoy, arranca vacío)
+//   · Se reinicia cada día (si la fecha guardada no es hoy, arranca vacío);
+//     qué día de la rutina toca lo decide la semana (lib/semana.js)
 //   · Una clave por rutina; al abrir otra rutina se borran las viejas
 //   · Si el coach edita la rutina, los ítems cambian de id y las marcas
 //     viejas simplemente dejan de coincidir
@@ -23,7 +24,7 @@ export function leerChecklist(rutinaId, hoy, storage = globalThis.localStorage) 
     if (!guardado) return vacio
     return guardado.fecha === hoy
       ? { fecha: hoy, marcados: Array.isArray(guardado.marcados) ? guardado.marcados : [], dia: guardado.dia ?? null }
-      : { ...vacio, dia: guardado.dia ?? null } // otro día: marcas en cero, pero recuerda el último día abierto
+      : vacio // otro día: marcas en cero y el día lo decide la semana (lib/semana.js → diaQueToca)
   } catch {
     return vacio
   }
@@ -43,3 +44,19 @@ export const alternarMarca = (estado, itemId) => ({
     ? estado.marcados.filter((id) => id !== itemId)
     : [...estado.marcados, itemId],
 })
+
+// Saca las marcas de las tareas indicadas (ej. las de días ya completados esta semana:
+// al volver a entrar, el día arranca limpio)
+export const sinMarcas = (estado, ids) => ({ ...estado, marcados: estado.marcados.filter((id) => !ids.has(id)) })
+
+// Al cerrar sesión se borran los checklists guardados en este navegador
+export function limpiarChecklists(storage = globalThis.localStorage) {
+  try {
+    for (let i = storage.length - 1; i >= 0; i--) {
+      const k = storage.key(i)
+      if (k?.startsWith(PREFIJO)) storage.removeItem(k)
+    }
+  } catch {
+    // sin almacenamiento disponible: nada que borrar
+  }
+}
