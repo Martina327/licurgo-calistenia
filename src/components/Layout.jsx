@@ -9,6 +9,7 @@ import LayoutAlumno from './LayoutAlumno'
 const MENU = {
   SuperAdmin: [
     { to: '/admin', texto: 'Ingresos', end: true },
+    { to: '/admin/concurrencia', texto: 'Concurrencia' },
     { to: '/recepcion', texto: 'Mostrador', end: true },
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
     { to: '/recepcion/comprobantes', texto: 'Comprobantes', corto: 'Comprob.', contador: 'comprobantes' },

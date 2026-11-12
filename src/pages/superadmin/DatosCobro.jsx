@@ -6,7 +6,7 @@ import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import DatosTransferencia from '../../components/comprobantes/DatosTransferencia'
 
-const VACIO = { titular: '', banco: '', cbu: '', alias: '', cuit: '' }
+const VACIO = { titular: '', banco: '', cbu: '', alias: '', cuit: '', whatsapp: '' }
 
 // Datos de la cuenta donde los alumnos transfieren la cuota (B4).
 // Solo el SuperAdmin los cambia (RLS de datos_cobro); los alumnos los ven en "Mi membresía".
@@ -19,7 +19,7 @@ export default function DatosCobro() {
 
   const cargar = async () => {
     const { data, error } = await supabase.from('datos_cobro')
-      .select('titular, banco, cbu, alias, cuit, updated_at').maybeSingle()
+      .select('titular, banco, cbu, alias, cuit, whatsapp, updated_at').maybeSingle()
     if (error) setAviso({ tipo: 'error', texto: mensajeError(error) })
     setGuardados(data)
     setDatos(Object.fromEntries(Object.keys(VACIO).map((k) => [k, data?.[k] ?? ''])))
@@ -38,6 +38,10 @@ export default function DatosCobro() {
       cbu: datos.cbu || null,
       alias: datos.alias.trim() || null,
       cuit: datos.cuit || null,
+      whatsapp: datos.whatsapp || null,
+    }
+    if (fila.whatsapp && !/^[0-9]{10}$/.test(fila.whatsapp)) {
+      return setAviso({ tipo: 'error', texto: 'El WhatsApp va con código de área y sin 0 ni 15: 10 números (ej. 3815551234).' })
     }
     if (!fila.cbu && !fila.alias) return setAviso({ tipo: 'error', texto: 'Cargá al menos el CBU o el alias.' })
     if (fila.cbu && !esCbuValido(fila.cbu)) return setAviso({ tipo: 'error', texto: 'El CBU tiene que tener 22 números.' })
@@ -62,7 +66,7 @@ export default function DatosCobro() {
     <div className="mx-auto max-w-2xl space-y-4">
       <div>
         <h1 className="text-xl font-semibold">Datos de cobro</h1>
-        <p className="text-sm text-neutral-400">La cuenta donde los alumnos transfieren la cuota.</p>
+        <p className="text-sm text-neutral-400">La cuenta donde los alumnos transfieren la cuota y el WhatsApp al que escriben.</p>
       </div>
 
       {aviso && <Aviso {...aviso} />}
@@ -75,7 +79,7 @@ export default function DatosCobro() {
           </label>
           <label className="block text-sm">
             <span className="text-neutral-300">CBU / CVU <span className="text-neutral-500">(22 números)</span></span>
-            <input value={datos.cbu} onChange={campo('cbu', soloNumeros)} inputMode="numeric" maxLength={22} className={`${input} font-mono`} />
+            <input value={datos.cbu} onChange={campo('cbu', (v) => soloNumeros(v).slice(0, 22))} inputMode="numeric" className={`${input} font-mono`} />
           </label>
           <label className="block text-sm">
             <span className="text-neutral-300">Titular de la cuenta</span>
@@ -85,9 +89,13 @@ export default function DatosCobro() {
             <span className="text-neutral-300">Banco o billetera</span>
             <input value={datos.banco} onChange={campo('banco')} placeholder="Ej: Banco Macro, Mercado Pago" className={input} />
           </label>
+          <label className="block text-sm sm:col-span-2">
+            <span className="text-neutral-300">WhatsApp para sugerencias y consultas <span className="text-neutral-500">(si queda vacío, se usa tu celular)</span></span>
+            <input value={datos.whatsapp} onChange={campo('whatsapp', (v) => soloNumeros(v).slice(0, 10))} inputMode="numeric" placeholder="3815551234" className={input} />
+          </label>
           <label className="block text-sm">
             <span className="text-neutral-300">CUIT <span className="text-neutral-500">(opcional)</span></span>
-            <input value={datos.cuit} onChange={campo('cuit', soloNumeros)} inputMode="numeric" maxLength={11} className={input} />
+            <input value={datos.cuit} onChange={campo('cuit', (v) => soloNumeros(v).slice(0, 11))} inputMode="numeric" className={input} />
           </label>
         </div>
         <div className="flex items-center justify-between gap-3">
