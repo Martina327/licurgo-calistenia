@@ -48,3 +48,26 @@
 1. Entrar a https://licurgo-calistenia.vercel.app desde Chrome (Android) o Safari (iPhone) e iniciar sesión.
 2. Android: tocar **Instalar** en el aviso (o menú ⋮ → *Instalar app*). iPhone: Compartir → *Agregar a inicio*.
 3. Abrir desde el ícono: se abre a pantalla completa, sin barra del navegador.
+
+## Actualización automática
+
+**Problema:** en el iPhone la app instalada no se recarga al volver a abrirla; queda suspendida con el código viejo y no se entera de los deploys (había que borrarla y reinstalarla).
+
+**Solución:**
+
+| Pieza | Qué hace |
+|---|---|
+| `vite.config.js` | Cada compilación lleva su versión (`__APP_VERSION__` = commit de Vercel) y publica `/version.json` |
+| `src/lib/actualizacion.js` | Compara la versión del código con `/version.json` al abrir, al volver a la app, al recuperar conexión y cada 5 minutos |
+| `src/components/ActualizacionApp.jsx` | Si hay versión nueva: recarga sola en pantallas sin formularios; si se está cargando algo, muestra *"Hay una versión nueva · Actualizar"* |
+| `public/sw.js` (v2) | Las pantallas se piden siempre al servidor (`no-cache`) |
+| `vercel.json` | Todo menos `/assets` sin caché del navegador; `version.json` sin guardar nunca |
+
+- **Recarga sola en:** `/alumno`, `/alumno/rutina`, `/coach`, `/recepcion`, `/admin`. El checklist vive en localStorage, así que no se pierde.
+- **Pregunta antes en:** editor de rutinas, plantillas, ejercicios, observaciones, alumnos, comprobantes, datos de cobro, login. También en `/alumno` si ya se eligió el archivo del comprobante o hay algo escrito con el cursor.
+- Si la persona pasa de una pantalla con formulario a una segura, se actualiza en ese momento.
+- Una sola recarga automática por versión (evita bucles si el CDN tarda en propagar).
+
+**Pruebas (Chromium emulando iPhone, con service worker y "deploys" simulados):** sin cambios no recarga; con deploy nuevo, al volver a la app se actualiza sola; no entra en bucle; con un archivo elegido muestra el aviso y *Actualizar* carga la versión nueva; en *Datos de cobro* con texto escrito muestra el aviso sin perder lo escrito; sin conexión no falla; abrir en frío trae la última versión.
+
+> Los teléfonos que tienen instalada una versión anterior a esta necesitan cerrarla del todo una vez (deslizar hacia arriba en el selector de apps) y abrirla de nuevo. Desde ahí se actualiza sola.

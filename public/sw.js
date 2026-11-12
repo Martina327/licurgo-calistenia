@@ -8,12 +8,13 @@
 //   · /assets/* (JS y CSS de Vite, con hash en el nombre → nunca cambian):
 //     primero la caché. Un deploy nuevo trae nombres nuevos.
 //   · Íconos y manifest: la caché y se actualiza en segundo plano.
+//   · /version.json y /sw.js: siempre a la red (con eso la app detecta deploys nuevos).
 //   · Supabase y cualquier otro dominio: NO se tocan (datos siempre en vivo,
 //     nada de datos de alumnos guardados por el service worker).
 //
 // Para forzar una limpieza total de cachés, cambiar VERSION.
 // ---------------------------------------------------------------
-const VERSION = 'licurgo-v1'
+const VERSION = 'licurgo-v2'
 const CACHE_APP = `${VERSION}-app`
 const CACHE_ASSETS = `${VERSION}-assets`
 const MAX_ASSETS = 60 // los assets de deploys viejos se van descartando
@@ -50,7 +51,8 @@ self.addEventListener('fetch', (event) => {
 async function navegacion(request) {
   const cache = await caches.open(CACHE_APP)
   try {
-    const resp = await fetch(request)
+    // no-cache: siempre se pregunta al servidor (Safari en iPhone a veces reusa su caché HTTP)
+    const resp = await fetch(request.url, { cache: 'no-cache', credentials: 'same-origin' })
     if (resp.ok) cache.put('/', resp.clone())
     return resp
   } catch {
