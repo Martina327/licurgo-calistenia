@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, mensajeError } from '../../lib/utils'
 import { esAliasValido, esCbuValido, esCuitValido, soloNumeros } from '../../lib/comprobantes'
@@ -9,13 +9,17 @@ import DatosTransferencia from '../../components/comprobantes/DatosTransferencia
 const VACIO = { titular: '', banco: '', cbu: '', alias: '', cuit: '', whatsapp: '' }
 
 // Datos de la cuenta donde los alumnos transfieren la cuota (B4).
-// Solo el SuperAdmin los cambia (RLS de datos_cobro); los alumnos los ven en "Mi membresía".
+// Solo el SuperAdmin los cambia (RLS de datos_cobro); los alumnos los ven en "Pagar por transferencia".
+// El dueño cambia de cuenta seguido: "Cambiar de cuenta" vacía los datos de la anterior para no mezclar
+// un alias nuevo con el CBU o el titular viejos. Cada comprobante guarda la cuenta vigente al subirlo.
+const DE_LA_CUENTA = ['alias', 'cbu', 'titular', 'banco', 'cuit']
 export default function DatosCobro() {
   const [datos, setDatos] = useState(VACIO)
   const [guardados, setGuardados] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [aviso, setAviso] = useState(null)
+  const aliasRef = useRef(null)
 
   const cargar = async () => {
     const { data, error } = await supabase.from('datos_cobro')
@@ -26,6 +30,13 @@ export default function DatosCobro() {
     setCargando(false)
   }
   useEffect(() => { cargar() }, [])
+
+  const cambiarCuenta = () => {
+    setDatos({ ...datos, ...Object.fromEntries(DE_LA_CUENTA.map((k) => [k, ''])) })
+    setAviso({ tipo: 'info', texto: 'Cargá la cuenta nueva (con el alias alcanza) y tocá Guardar. Hasta que guardes, los alumnos siguen viendo la anterior.' })
+    aliasRef.current?.focus()
+  }
+  const hayCambios = guardados ? Object.keys(VACIO).some((k) => (guardados[k] ?? '') !== datos[k]) : true
 
   const campo = (k, limpiar = (v) => v) => (ev) => setDatos({ ...datos, [k]: limpiar(ev.target.value) })
 
@@ -55,7 +66,7 @@ export default function DatosCobro() {
     setGuardando(false)
     if (error) return setAviso({ tipo: 'error', texto: mensajeError(error) })
     await cargar()
-    setAviso({ tipo: 'ok', texto: 'Datos guardados. Los alumnos ya los ven en "Mi membresía".' })
+    setAviso({ tipo: 'ok', texto: 'Listo. Desde ahora los alumnos ven esta cuenta para transferir.' })
   }
 
   if (cargando) return <Cargando />
@@ -69,16 +80,32 @@ export default function DatosCobro() {
         <p className="text-sm text-neutral-400">La cuenta donde los alumnos transfieren la cuota y el WhatsApp al que escriben.</p>
       </div>
 
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+        <div className="min-w-0">
+          <p className="text-xs text-neutral-400">Cuenta que ven los alumnos hoy</p>
+          <p className="truncate text-lg font-semibold">
+            {guardados?.alias || (guardados?.cbu ? `CBU ${guardados.cbu}` : <span className="text-amber-300">Sin cargar</span>)}
+          </p>
+          {guardados?.titular && <p className="text-sm text-neutral-400">{guardados.titular}{guardados.banco && ` · ${guardados.banco}`}</p>}
+        </div>
+        {(guardados?.alias || guardados?.cbu) && (
+          <button type="button" onClick={cambiarCuenta}
+            className="rounded-lg border border-neutral-600 px-3 py-2 text-sm font-medium text-neutral-100 hover:bg-neutral-800">
+            Cambiar de cuenta
+          </button>
+        )}
+      </section>
+
       {aviso && <Aviso {...aviso} />}
 
       <form onSubmit={guardar} className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="text-neutral-300">Alias</span>
-            <input value={datos.alias} onChange={campo('alias', (v) => v.replace(/\s/g, ''))} placeholder="licurgo.calistenia" className={input} />
+            <input ref={aliasRef} value={datos.alias} onChange={campo('alias', (v) => v.replace(/\s/g, ''))} placeholder="Ej: Gero.gh2" autoCapitalize="none" autoCorrect="off" spellCheck={false} className={input} />
           </label>
           <label className="block text-sm">
-            <span className="text-neutral-300">CBU / CVU <span className="text-neutral-500">(22 números)</span></span>
+            <span className="text-neutral-300">CBU / CVU <span className="text-neutral-500">(opcional si cargás alias)</span></span>
             <input value={datos.cbu} onChange={campo('cbu', (v) => soloNumeros(v).slice(0, 22))} inputMode="numeric" className={`${input} font-mono`} />
           </label>
           <label className="block text-sm">
@@ -102,7 +129,7 @@ export default function DatosCobro() {
           <span className="text-xs text-neutral-500">
             {guardados?.updated_at && (guardados.cbu || guardados.alias) ? `Última modificación: ${formatearFecha(guardados.updated_at)}` : 'Sin datos cargados'}
           </span>
-          <button disabled={guardando} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
+          <button disabled={guardando || !hayCambios} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
             {guardando ? 'Guardando…' : 'Guardar'}
           </button>
         </div>
