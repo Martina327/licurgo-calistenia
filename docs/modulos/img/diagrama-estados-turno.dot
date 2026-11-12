@@ -1,0 +1,30 @@
+digraph EstadosTurno {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=20, bgcolor="white", pad=0.4, nodesep=0.8, ranksep=0.6,
+         label="Diagrama de estados del turno de caja · CU05\n ", labelloc=t];
+  node  [fontname="Helvetica", fontsize=13, shape=box, style="rounded,filled", penwidth=1.4, margin="0.3,0.15", width=2.8];
+  edge  [fontname="Helvetica", fontsize=11, color="#3F3F46", fontcolor="#18181B", penwidth=1.2];
+
+  inicio [shape=circle, label="", width=0.25, fixedsize=true, style=filled, fillcolor="#18181B", color="#18181B"];
+  abierto [label="Abierto\n(registra cobros en efectivo;\nsin ver el total)", fillcolor="#DCFCE7", color="#15803D"];
+  d [shape=diamond, label="¿Contado =\nesperado?", style=filled, fillcolor="#F4F4F5", color="#3F3F46", width=1.6, margin="0.05,0.05"];
+  justo [label="Cerrado · caja justa", fillcolor="#DCFCE7", color="#15803D"];
+  dif [label="Cerrado con diferencia\n(sobra o falta)", fillcolor="#FEF3C7", color="#B45309"];
+  just [label="Justificado\n(la recepcionista explicó)", fillcolor="#FEF3C7", color="#B45309"];
+  rev [label="Revisado por el dueño", fillcolor="#E0F2FE", color="#0369A1"];
+  fin [shape=doublecircle, label="", width=0.2, fixedsize=true, style=filled, fillcolor="#18181B", color="#18181B"];
+
+  nota [shape=note, fillcolor="#FEF9C3", color="#A16207", fontsize=11, width=0, margin="0.2,0.12",
+        label="Un turno cerrado no se modifica.\nLa justificación se agrega una sola vez.\nMientras no se revise, el dueño ve\nel aviso en Ingresos."];
+
+  inicio -> abierto [label="  La recepcionista abre el turno\n  con el efectivo inicial"];
+  abierto -> d [label="  Cierra: carga el efectivo contado\n  y confirma"];
+  d -> justo [label=" Sí"];
+  d -> dif [label=" No"];
+  dif -> just [label="  Escribe la justificación"];
+  dif -> rev [label="  El dueño la revisa\n  sin justificación", style=dashed];
+  just -> rev [label="  El dueño marca\n  \"revisado\""];
+  justo -> fin;
+  rev -> fin;
+  {rank=same; dif; nota}
+  nota -> dif [style=dotted, arrowhead=none, color="#A16207"];
+}
