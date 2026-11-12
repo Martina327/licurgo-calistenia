@@ -1,21 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatearFecha, linkWhatsApp, mensajeError, MENSAJES_WHATSAPP } from '../../lib/utils'
+import { formatearFecha, hoyAR, linkWhatsApp, mensajeError, MENSAJES_WHATSAPP } from '../../lib/utils'
+import { buscarParaCheckin, horaAR, situacionCheckin, tienePaseLibre, TONOS } from '../../lib/checkin'
 import Cargando from '../../components/Cargando'
-
-const COLOR_ESTADO = {
-  'Al día': 'bg-emerald-950 text-emerald-300',
-  'Por vencer': 'bg-amber-950 text-amber-300',
-  Vencida: 'bg-red-950 text-red-300',
-  'Sin membresía': 'bg-neutral-800 text-neutral-300',
-}
 
 // Mostrador de recepción:
 //   · Check-in (CU03): la asistencia la marca SOLO recepción. La cuota vencida avisa, no bloquea.
 //   · Invitaciones a retomar: clase de prueba sin pagar (7 días) e inactivos. WhatsApp manual.
 //   · Alertas de vencimiento (CU17) con el mensaje de WhatsApp ya armado.
-// Pendiente (fase 2): comprobantes (CU08), cobro en efectivo (CU06), kiosco (CU04),
-// subalquileres (CU16) y caja (CU05).
 export default function Mostrador() {
   const [alumnos, setAlumnos] = useState([])
   const [alertas, setAlertas] = useState([])
@@ -50,79 +42,137 @@ export default function Mostrador() {
 }
 
 // ---------------------------------------------------------------
-// Check-in por mostrador
+// Check-in por mostrador (B6 · CU03 · RF11)
+//   · Buscar por DNI (con o sin puntos) o nombre; Enter marca si hay un solo resultado
+//   · Quien ya tiene presente hoy muestra la hora en lugar del botón
+//   · Cuota vencida: avisa en rojo pero registra igual (no bloquea)
+//   · Pase Libre (A6) cuenta como al día; si la columna todavía no existe, se lee como falso
 // ---------------------------------------------------------------
 function CheckIn({ alumnos }) {
   const [busqueda, setBusqueda] = useState('')
-  const [aviso, setAviso] = useState(null) // { tipo: 'ok' | 'alerta' | 'error', texto }
+  const [resultado, setResultado] = useState(null) // { alumno, situacion, hora } o { error }
   const [enCurso, setEnCurso] = useState(null)
+  const [presentes, setPresentes] = useState([]) // [{ alumno_id, fecha_hora }] de hoy
+  const [verPresentes, setVerPresentes] = useState(false)
+  const input = useRef(null)
 
-  const resultados = useMemo(() => {
-    const q = busqueda.trim().toLowerCase()
-    if (q.length < 2) return []
-    return alumnos
-      .filter((a) => a.dni.includes(q) || `${a.nombre} ${a.apellido}`.toLowerCase().includes(q))
-      .slice(0, 6)
-  }, [busqueda, alumnos])
+  const cargarPresentes = useCallback(async () => {
+    const { data } = await supabase.from('asistencias').select('alumno_id, fecha_hora').eq('fecha', hoyAR())
+      .order('fecha_hora', { ascending: false })
+    setPresentes(data ?? [])
+  }, [])
+  useEffect(() => { cargarPresentes() }, [cargarPresentes])
+
+  const horaDe = useMemo(() => Object.fromEntries(presentes.map((p) => [p.alumno_id, p.fecha_hora])), [presentes])
+  const porId = useMemo(() => Object.fromEntries(alumnos.map((a) => [a.alumno_id, a])), [alumnos])
+  const resultados = useMemo(() => buscarParaCheckin(alumnos, busqueda), [busqueda, alumnos])
 
   const marcarPresente = async (alumno) => {
+    if (enCurso) return
     setEnCurso(alumno.alumno_id)
-    setAviso(null)
-    const { error } = await supabase.rpc('registrar_checkin', { p_alumno_id: alumno.alumno_id })
+    const { data, error } = await supabase.rpc('registrar_checkin', { p_alumno_id: alumno.alumno_id })
     setEnCurso(null)
-    if (error) return setAviso({ tipo: 'error', texto: mensajeError(error) })
-
-    const nombre = `${alumno.nombre} ${alumno.apellido}`
-    if (alumno.estado_membresia === 'Vencida') {
-      setAviso({ tipo: 'alerta', texto: `Presente registrado. Atención: la cuota de ${nombre} venció hace ${Math.abs(alumno.dias_restantes)} día(s).` })
-    } else if (alumno.estado_alumno === 'En clase de prueba') {
-      setAviso({ tipo: 'ok', texto: `Presente registrado: ${nombre} (clase de prueba).` })
-    } else {
-      setAviso({ tipo: 'ok', texto: `Presente registrado: ${nombre}.` })
-    }
+    if (error) return setResultado({ error: mensajeError(error) })
+    const yaEstaba = Boolean(horaDe[alumno.alumno_id])
+    setResultado({ alumno, situacion: situacionCheckin(alumno), hora: data?.fecha_hora ?? new Date().toISOString(), yaEstaba })
     setBusqueda('')
+    input.current?.focus()
+    cargarPresentes()
   }
 
-  const colorAviso = { ok: 'bg-emerald-950 text-emerald-300', alerta: 'bg-amber-950 text-amber-300', error: 'bg-red-950 text-red-300' }
+  const alEnter = (e) => {
+    if (e.key === 'Enter' && resultados.length === 1 && !horaDe[resultados[0].alumno_id]) marcarPresente(resultados[0])
+  }
 
   return (
     <section className="space-y-3">
-      <div>
-        <h1 className="text-xl font-semibold">Asistencia</h1>
-        <p className="text-sm text-neutral-400">Buscá al alumno por DNI o nombre y marcá su presente. Se guarda la fecha y la hora.</p>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold">Asistencia</h1>
+          <p className="text-sm text-neutral-400">Buscá por DNI o nombre y marcá el presente. Una cuota vencida no impide entrar: solo avisa.</p>
+        </div>
+        <button onClick={() => setVerPresentes((v) => !v)}
+          className="rounded-full border border-neutral-700 px-3 py-1 text-sm text-neutral-300 hover:bg-neutral-900">
+          Presentes hoy <span className="font-semibold text-white">{presentes.length}</span> {verPresentes ? '▾' : '▸'}
+        </button>
       </div>
+
       <input
         id="busqueda-checkin"
+        ref={input}
+        autoFocus
         value={busqueda}
-        onChange={(e) => setBusqueda(e.target.value)}
+        onChange={(e) => { setBusqueda(e.target.value); if (e.target.value) setResultado(null) }}
+        onKeyDown={alEnter}
+        inputMode="search"
+        autoComplete="off"
         placeholder="DNI o nombre"
-        className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-neutral-400"
+        className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-lg outline-none focus:border-neutral-400"
       />
+
+      {busqueda.trim() && resultados.length === 0 && (
+        <p className="px-1 text-sm text-neutral-500">No encontramos a nadie con "{busqueda.trim()}". Si es nuevo, dalo de alta en Alumnos.</p>
+      )}
+
       {resultados.length > 0 && (
-        <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800">
-          {resultados.map((a) => (
-            <li key={a.alumno_id} className="flex items-center justify-between gap-3 px-4 py-3">
-              <div className="min-w-0">
-                <p className="truncate font-medium">{a.nombre} {a.apellido}</p>
-                <p className="text-xs text-neutral-400">
-                  DNI {a.dni} · {a.estado_alumno === 'Activo' ? `vence ${formatearFecha(a.fecha_vencimiento)}` : a.estado_alumno}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <span className={`rounded-full px-2.5 py-0.5 text-xs ${COLOR_ESTADO[a.estado_membresia]}`}>{a.estado_membresia}</span>
-                <button
-                  onClick={() => marcarPresente(a)}
-                  disabled={enCurso === a.alumno_id}
-                  className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-950 disabled:opacity-50"
-                >
-                  Presente
-                </button>
-              </div>
-            </li>
-          ))}
+        <ul className="divide-y divide-neutral-800 overflow-hidden rounded-xl border border-neutral-800">
+          {resultados.map((a) => {
+            const sit = situacionCheckin(a)
+            const hora = horaDe[a.alumno_id]
+            return (
+              <li key={a.alumno_id} className="flex items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{a.apellido}, {a.nombre}</p>
+                  <p className="text-sm text-neutral-400">
+                    DNI {a.dni}{a.fecha_vencimiento && !tienePaseLibre(a) ? ` · vence ${formatearFecha(a.fecha_vencimiento)}` : ''}
+                  </p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${TONOS[sit.tono].chip}`}>{sit.etiqueta}</span>
+                {hora ? (
+                  <span className="w-28 shrink-0 text-right text-sm text-emerald-300">✓ Presente {horaAR(hora)}</span>
+                ) : (
+                  <button onClick={() => marcarPresente(a)} disabled={Boolean(enCurso)}
+                    className="w-28 shrink-0 rounded-lg bg-white py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
+                    {enCurso === a.alumno_id ? 'Marcando…' : 'Presente'}
+                  </button>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
-      {aviso && <p className={`rounded-lg px-3 py-2 text-sm ${colorAviso[aviso.tipo]}`}>{aviso.texto}</p>}
+      {resultados.length === 1 && !horaDe[resultados[0].alumno_id] && (
+        <p className="hidden px-1 text-xs text-neutral-500 sm:block">Enter para marcar el presente.</p>
+      )}
+
+      {resultado?.error && <p className="rounded-lg bg-red-950 px-3 py-2 text-sm text-red-300">{resultado.error}</p>}
+      {resultado?.alumno && (
+        <div role="status" className={`rounded-xl border px-4 py-3 ${TONOS[resultado.situacion.tono].caja}`}>
+          <p className="font-semibold">
+            {resultado.yaEstaba ? 'Ya tenía el presente de hoy' : 'Presente registrado'} · {resultado.alumno.nombre} {resultado.alumno.apellido}
+            <span className="font-normal opacity-70"> · {horaAR(resultado.hora)}</span>
+          </p>
+          <p className="text-sm opacity-90">{resultado.situacion.texto}</p>
+        </div>
+      )}
+
+      {verPresentes && (
+        presentes.length === 0 ? (
+          <p className="px-1 text-sm text-neutral-500">Todavía no hay presentes hoy.</p>
+        ) : (
+          <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800 text-sm">
+            {presentes.map((p) => {
+              const a = porId[p.alumno_id]
+              return (
+                <li key={p.alumno_id} className="flex items-center justify-between gap-3 px-4 py-2">
+                  <span className="truncate">{a ? `${a.apellido}, ${a.nombre}` : 'Alumno dado de baja'}</span>
+                  <span className="shrink-0 tabular-nums text-neutral-400">{horaAR(p.fecha_hora)}</span>
+                </li>
+              )
+            })}
+          </ul>
+        )
+      )}
     </section>
   )
 }
