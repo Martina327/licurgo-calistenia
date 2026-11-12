@@ -21,6 +21,7 @@ import Plantillas from './pages/coach/Plantillas'
 import InicioAlumno from './pages/alumno/InicioAlumno'
 import MiRutina from './pages/alumno/MiRutina'
 import PagarCuota from './pages/alumno/PagarCuota'
+import Mensualidad from './pages/alumno/Mensualidad'
 import MisComprobantes from './pages/alumno/MisComprobantes'
 
 // "/" manda a cada uno a su pantalla de inicio según el rol (CU02)
@@ -61,6 +62,7 @@ export default function App() {
           <Route element={<RutaProtegida roles={['Alumno']} />}>
             <Route path="/alumno" element={<InicioAlumno />} />
             <Route path="/alumno/rutina" element={<MiRutina />} />
+            <Route path="/alumno/mensualidad" element={<Mensualidad />} />
             <Route path="/alumno/pagar" element={<PagarCuota />} />
             <Route path="/alumno/comprobantes" element={<MisComprobantes />} />
           </Route>
