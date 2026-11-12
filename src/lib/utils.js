@@ -71,6 +71,12 @@ const MENSAJES = {
   FECHA_NACIMIENTO_INVALIDA: 'Revisá la fecha de nacimiento.',
   CANTIDAD_INVALIDA: 'La cantidad tiene que ser un número mayor a 0.',
   PRODUCTO_INEXISTENTE: 'Ese producto ya no existe. Recargá la pantalla.',
+  ESPACIO_INEXISTENTE: 'Ese salón ya no está disponible. Recargá la pantalla.',
+  LOCATARIO_REQUERIDO: 'Escribí quién alquila.',
+  HORAS_INVALIDAS: 'Las horas tienen que ser entre 0,5 y 24, en medias horas.',
+  SIN_PRECIO_MENSUAL: 'Ese salón no tiene precio mensual. Pedile al dueño que lo cargue.',
+  PERIODO_REQUERIDO: 'Elegí el mes que paga.',
+  MODALIDAD_INVALIDA: 'Elegí si es por hora o mensual.',
 }
 export const mensajeError = (error) => {
   if (!error) return ''

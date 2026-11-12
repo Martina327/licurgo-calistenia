@@ -15,7 +15,9 @@ import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 //   El total esperado del turno NO se muestra: el cierre es un arqueo ciego (A5).
 //   A3 · Kiosco (CU04): carrito con medio de pago; registrar_venta descuenta stock y
 //        frena si no alcanza. En efectivo va al turno; por transferencia, solo al dashboard.
-//   Próximos pasos: subalquileres (A4), cierre (A5).
+//   A4 · Subalquiler (CU16): salón, modalidad (por hora o mensual), quién alquila y medio
+//        de pago. El monto lo calcula la base con el precio vigente del salón (no se edita).
+//   Próximo paso: cierre del turno (A5).
 
 const formatearHora = (iso) =>
   new Date(iso).toLocaleString('es-AR', {
@@ -23,7 +25,11 @@ const formatearHora = (iso) =>
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
   })
 
-const PESTANAS = ['Cuota', 'Kiosco']
+const PESTANAS = [
+  { id: 'Cuota', texto: 'Cobrar cuota' },
+  { id: 'Kiosco', texto: 'Kiosco' },
+  { id: 'Subalquiler', texto: 'Subalquiler' },
+]
 
 export default function Caja() {
   const { perfil } = useAuth()
@@ -62,20 +68,22 @@ export default function Caja() {
       {turno ? (
         <>
           <TurnoAbierto turno={turno} />
-          <div className="flex gap-2 border-b border-neutral-800">
+          <div className="flex gap-1 overflow-x-auto border-b border-neutral-800">
             {PESTANAS.map((p) => (
               <button
-                key={p}
-                onClick={() => setPestana(p)}
+                key={p.id}
+                onClick={() => setPestana(p.id)}
                 className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
-                  pestana === p ? 'border-white text-white' : 'border-transparent text-neutral-400 hover:text-white'
+                  pestana === p.id ? 'border-white text-white' : 'border-transparent text-neutral-400 hover:text-white'
                 }`}
               >
-                {p === 'Cuota' ? 'Cobrar cuota' : 'Kiosco'}
+                {p.texto}
               </button>
             ))}
           </div>
-          {pestana === 'Cuota' ? <CobrarCuota /> : <Kiosco />}
+          {pestana === 'Cuota' && <CobrarCuota />}
+          {pestana === 'Kiosco' && <Kiosco />}
+          {pestana === 'Subalquiler' && <Subalquiler />}
         </>
       ) : (
         <AbrirTurno alAbrir={cargar} />
@@ -623,6 +631,206 @@ function Kiosco() {
       )}
 
       {items.length === 0 && <Aviso tipo="error" texto={error} />}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------
+// Subalquiler de salones (CU16)
+// ---------------------------------------------------------------
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+// Mes actual y los dos siguientes, en formato YYYY-MM-01
+const opcionesMes = () => {
+  const [a, m] = hoyAR().split('-').map(Number)
+  return [-1, 0, 1, 2].map((d) => {
+    const f = new Date(Date.UTC(a, m - 1 + d, 1))
+    const iso = f.toISOString().slice(0, 10)
+    return { iso, texto: `${MESES[f.getUTCMonth()]} ${f.getUTCFullYear()}` }
+  })
+}
+
+const VACIO_ALQ = { salonId: '', modalidad: 'Por hora', horas: '1', periodo: '', locatario: '', contacto: '' }
+
+function Subalquiler() {
+  const [salones, setSalones] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [datos, setDatos] = useState(VACIO_ALQ)
+  const [medio, setMedio] = useState('Efectivo')
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState('')
+  const [ultimo, setUltimo] = useState(null)
+  const meses = useMemo(opcionesMes, [])
+
+  useEffect(() => {
+    supabase
+      .from('espacios_alquiler')
+      .select('id, nombre, precio_hora, precio_mensual')
+      .eq('activo', true)
+      .order('nombre')
+      .then(({ data, error }) => {
+        if (error) setError(mensajeError(error))
+        setSalones(data ?? [])
+        setCargando(false)
+      })
+  }, [])
+
+  if (cargando) return <Cargando />
+
+  const salon = salones.find((s) => s.id === datos.salonId)
+  const horas = Number(String(datos.horas).replace(',', '.'))
+  const horasValidas = horas > 0 && horas <= 24 && Number.isInteger(horas * 2)
+  const total = !salon ? 0 : datos.modalidad === 'Por hora' ? (horasValidas ? horas * salon.precio_hora : 0) : salon.precio_mensual ?? 0
+
+  const cambiar = (c) => (e) => {
+    setUltimo(null)
+    setError('')
+    setDatos((d) => ({ ...d, [c]: e.target.value }))
+  }
+
+  const elegirSalon = (id) => {
+    setUltimo(null)
+    setError('')
+    const s = salones.find((x) => x.id === id)
+    // Si el salón nuevo no se alquila por mes, vuelve a "Por hora"
+    setDatos((d) => ({ ...d, salonId: id, modalidad: s && !s.precio_mensual ? 'Por hora' : d.modalidad, periodo: d.periodo || meses[1].iso }))
+  }
+
+  const cobrar = async () => {
+    setError('')
+    if (!salon) return setError('Elegí el salón.')
+    if (datos.modalidad === 'Por hora' && !horasValidas) return setError('Las horas tienen que ser entre 0,5 y 24, en medias horas (ej.: 1, 1,5, 2).')
+    if (datos.modalidad === 'Mensual' && !datos.periodo) return setError('Elegí el mes que paga.')
+    if (!datos.locatario.trim()) return setError('Escribí quién alquila.')
+
+    setEnviando(true)
+    const { data, error } = await supabase.rpc('registrar_cobro_alquiler', {
+      p_espacio_id: salon.id,
+      p_modalidad: datos.modalidad,
+      p_horas: datos.modalidad === 'Por hora' ? horas : null,
+      p_periodo: datos.modalidad === 'Mensual' ? datos.periodo : null,
+      p_locatario: datos.locatario.trim(),
+      p_contacto: datos.contacto,
+      p_medio: medio,
+    })
+    setEnviando(false)
+    if (error) return setError(mensajeError(error))
+    const mes = meses.find((m) => m.iso === datos.periodo)?.texto
+    setUltimo({
+      monto: data,
+      medio,
+      texto: `${salon.nombre} · ${datos.modalidad === 'Por hora' ? `${String(horas).replace('.', ',')} h` : `mensual ${mes}`} · ${datos.locatario.trim()}`,
+    })
+    setDatos({ ...VACIO_ALQ, salonId: datos.salonId, periodo: datos.periodo })
+  }
+
+  const campo = 'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-neutral-400'
+  const opcion = (activa) =>
+    `flex-1 rounded-lg border px-3 py-2 text-sm ${activa ? 'border-white bg-white font-semibold text-neutral-950' : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'}`
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold">Subalquiler</h2>
+        <p className="text-sm text-neutral-400">Cobro del alquiler de un salón, por hora o por mes. El precio lo define el dueño.</p>
+      </div>
+
+      {ultimo && (
+        <div className="rounded-xl border border-emerald-900 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-200">
+          <p className="font-medium">Cobro registrado · {formatearPesos(ultimo.monto)} · {ultimo.medio}</p>
+          <p className="text-emerald-300/80">{ultimo.texto}</p>
+        </div>
+      )}
+
+      {salones.length === 0 ? (
+        <p className="text-sm text-neutral-400">No hay salones cargados. Los carga el dueño desde "Salones".</p>
+      ) : (
+        <div className="space-y-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+          <label className="block space-y-1 text-sm">
+            <span className="text-neutral-400">Salón</span>
+            <select value={datos.salonId} onChange={(e) => elegirSalon(e.target.value)} className={campo}>
+              <option value="">Elegí un salón</option>
+              {salones.map((s) => (
+                <option key={s.id} value={s.id}>{s.nombre}</option>
+              ))}
+            </select>
+          </label>
+
+          {salon && (
+            <>
+              <div className="space-y-1 text-sm">
+                <span className="text-neutral-400">Modalidad</span>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setDatos((d) => ({ ...d, modalidad: 'Por hora' }))} className={opcion(datos.modalidad === 'Por hora')}>
+                    Por hora · {formatearPesos(salon.precio_hora)}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!salon.precio_mensual}
+                    onClick={() => setDatos((d) => ({ ...d, modalidad: 'Mensual' }))}
+                    className={`${opcion(datos.modalidad === 'Mensual')} disabled:opacity-40`}
+                  >
+                    {salon.precio_mensual ? `Mensual · ${formatearPesos(salon.precio_mensual)}` : 'Sin alquiler mensual'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                {datos.modalidad === 'Por hora' ? (
+                  <label className="space-y-1 text-sm">
+                    <span className="text-neutral-400">Horas</span>
+                    <input value={datos.horas} onChange={cambiar('horas')} inputMode="decimal" placeholder="1" className={campo} />
+                  </label>
+                ) : (
+                  <label className="space-y-1 text-sm">
+                    <span className="text-neutral-400">Mes que paga</span>
+                    <select value={datos.periodo} onChange={cambiar('periodo')} className={campo}>
+                      {meses.map((m) => (
+                        <option key={m.iso} value={m.iso}>{m.texto}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="space-y-1 text-sm">
+                  <span className="text-neutral-400">Quién alquila</span>
+                  <input value={datos.locatario} onChange={cambiar('locatario')} placeholder="Nombre o actividad" className={campo} />
+                </label>
+                <label className="space-y-1 text-sm">
+                  <span className="text-neutral-400">Celular <span className="text-neutral-500">(opcional)</span></span>
+                  <input value={datos.contacto} onChange={cambiar('contacto')} inputMode="tel" placeholder="3815551234" className={campo} />
+                </label>
+              </div>
+
+              <div className="flex items-baseline justify-between border-t border-neutral-800 pt-3">
+                <span className="text-neutral-400">
+                  Total{datos.modalidad === 'Por hora' && horasValidas ? ` (${String(horas).replace('.', ',')} h × ${formatearPesos(salon.precio_hora)})` : ''}
+                </span>
+                <span className="text-xl font-semibold tabular-nums">{formatearPesos(total)}</span>
+              </div>
+
+              <div className="flex gap-2">
+                {MEDIOS.map((m) => (
+                  <button key={m} type="button" onClick={() => setMedio(m)} className={opcion(medio === m)}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+              {medio === 'Transferencia' && (
+                <p className="text-xs text-neutral-400">Confirmá que la transferencia llegó antes de registrar. No entra en el efectivo de tu caja.</p>
+              )}
+
+              <Aviso tipo="error" texto={error} />
+
+              <div className="flex justify-end">
+                <button onClick={cobrar} disabled={enviando || total <= 0} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
+                  {enviando ? 'Registrando…' : `Cobrar ${formatearPesos(total)}`}
+                </button>
+              </div>
+            </>
+          )}
+          {!salon && <Aviso tipo="error" texto={error} />}
+        </div>
+      )}
     </section>
   )
 }
