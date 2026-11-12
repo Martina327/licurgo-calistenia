@@ -5,12 +5,13 @@ import InstalarApp from './InstalarApp'
 // Menú de cada rol. El SuperAdmin ve también las secciones de los demás roles.
 const MENU = {
   SuperAdmin: [
-    { to: '/admin', texto: 'Ingresos' },
+    { to: '/admin', texto: 'Ingresos', end: true },
     { to: '/recepcion', texto: 'Mostrador', end: true },
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
     { to: '/coach', texto: 'Rutinas', end: true },
     { to: '/coach/plantillas', texto: 'Plantillas' },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
+    { to: '/admin/datos-cobro', texto: 'Datos de cobro', corto: 'Cobro' },
   ],
   Recepcionista: [
     { to: '/recepcion', texto: 'Mostrador', end: true },
