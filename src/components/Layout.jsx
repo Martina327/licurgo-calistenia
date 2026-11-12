@@ -9,7 +9,7 @@ const MENU = {
     { to: '/admin/salones', texto: 'Salones' },
     { to: '/recepcion', texto: 'Mostrador', end: true },
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
-    { to: '/recepcion/caja', texto: 'Caja' },
+    { to: '/recepcion/caja', texto: 'Cobros' },
     { to: '/coach', texto: 'Rutinas', end: true },
     { to: '/coach/plantillas', texto: 'Plantillas' },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },

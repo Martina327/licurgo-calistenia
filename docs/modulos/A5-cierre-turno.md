@@ -28,3 +28,20 @@ feature/a4-subalquiler
 ## Cambios en la base
 
 Ninguno: `cerrar_turno` y `justificar_cierre` ya existían. Se probó en Postgres local que solo suma el efectivo del turno y que la justificación no se puede repetir.
+
+## Caja de recepción y cobros del dueño (migración 20261111_03)
+
+Decisión del 11/11/2026:
+
+| | Recepcionista | Dueño (SuperAdmin) |
+|---|---|---|
+| Menú | **Caja** | **Cobros** |
+| Turno y cierre | Sí (obligatorio para efectivo) | No |
+| Cuota | Efectivo | Efectivo o transferencia |
+| Kiosco | Sí | No |
+| Subalquiler | Efectivo o transferencia | Efectivo o transferencia |
+
+- El efectivo que cobra el dueño queda **sin turno** (`turno_id` NULL): no altera ningún arqueo. Detalle: "Cuota - Efectivo (cobrada por el dueño)".
+- `chk_caja` pasa a ser: la transferencia nunca tiene turno; el efectivo puede no tenerlo.
+- `_turno_abierto()` devuelve NULL para el dueño; `abrir_turno`, `cerrar_turno`, `justificar_cierre` y `registrar_venta` quedan solo para Recepcionista.
+- Nueva `registrar_pago_cuota(alumno, medio)`; `registrar_pago_efectivo` queda como atajo. La cuota por transferencia anotada a mano es solo del dueño: las de los alumnos siguen por comprobante (B4/B5).

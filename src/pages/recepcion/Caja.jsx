@@ -21,6 +21,9 @@ import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 //        carga SIN ver cuánto debería haber. Recién al cerrar, el sistema calcula el esperado
 //        (inicial + efectivo cobrado en el turno) y muestra la diferencia. Si hay diferencia,
 //        pide justificarla (justificar_cierre, una sola vez). El turno cerrado no se edita.
+//   Caja solo de RECEPCIONISTAS (turno, kiosco, arqueo). El DUEÑO entra a "Cobros": sin turno,
+//        anota cuotas (efectivo o transferencia) y subalquileres que le pagan directo a él.
+//        Su efectivo queda registrado sin turno y no altera el cierre de nadie (migración 20261111_03).
 
 const formatearHora = (iso) =>
   new Date(iso).toLocaleString('es-AR', {
@@ -36,6 +39,7 @@ const PESTANAS = [
 
 export default function Caja() {
   const { perfil } = useAuth()
+  const esDueno = perfil.rol === 'SuperAdmin'
   const [pestana, setPestana] = useState('Cuota')
   const [turno, setTurno] = useState(null) // turno abierto de este usuario, o null
   const [cerrando, setCerrando] = useState(false)
@@ -56,9 +60,10 @@ export default function Caja() {
   }, [perfil.id])
 
   useEffect(() => {
-    cargar()
-  }, [cargar])
+    if (!esDueno) cargar()
+  }, [cargar, esDueno])
 
+  if (esDueno) return <CobrosDueno />
   if (cargando) return <Cargando />
 
   return (
@@ -200,7 +205,7 @@ const sumarDias = (iso, dias) => {
   return f.toISOString().slice(0, 10)
 }
 
-function CobrarCuota() {
+function CobrarCuota({ esDueno = false }) {
   const [alumnos, setAlumnos] = useState([])
   const [busqueda, setBusqueda] = useState('')
   const [elegido, setElegido] = useState(null)
@@ -257,7 +262,7 @@ function CobrarCuota() {
       {ultimoCobro && (
         <div className="rounded-xl border border-emerald-900 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-200">
           <p className="font-medium">
-            Cobro registrado: {ultimoCobro.nombre} {ultimoCobro.apellido} · {formatearPesos(ultimoCobro.monto)} en efectivo
+            Cobro registrado: {ultimoCobro.nombre} {ultimoCobro.apellido} · {formatearPesos(ultimoCobro.monto)} · {ultimoCobro.medio}
           </p>
           <p className="text-emerald-300/80">
             Nuevo vencimiento: {formatearFecha(ultimoCobro.vencimiento)}
@@ -301,6 +306,7 @@ function CobrarCuota() {
 
       {elegido && (
         <DetalleCobro
+          esDueno={esDueno}
           alumno={elegido}
           alCancelar={() => setElegido(null)}
           alCompletarFicha={refrescarElegido}
@@ -311,7 +317,8 @@ function CobrarCuota() {
   )
 }
 
-function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar }) {
+function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar, esDueno }) {
+  const [medio, setMedio] = useState('Efectivo')
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
@@ -324,10 +331,11 @@ function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar }) {
   const cobrar = async () => {
     setError('')
     setEnviando(true)
-    const { data, error } = await supabase.rpc('registrar_pago_efectivo', { p_alumno_id: alumno.alumno_id })
+    const { data, error } = await supabase.rpc('registrar_pago_cuota', { p_alumno_id: alumno.alumno_id, p_medio: medio })
     setEnviando(false)
     if (error) return setError(mensajeError(error))
     alCobrar({
+      medio,
       nombre: alumno.nombre,
       apellido: alumno.apellido,
       monto: alumno.precio_plan,
@@ -376,6 +384,23 @@ function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar }) {
             <p className="text-sm text-sky-300">Vuelve después de estar inactivo: los 30 días cuentan desde hoy.</p>
           )}
 
+          {esDueno && (
+            <div className="flex gap-2">
+              {MEDIOS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMedio(m)}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm ${
+                    medio === m ? 'border-white bg-white font-semibold text-neutral-950' : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          )}
+
           <Aviso tipo="error" texto={error} />
 
           <div className="flex justify-end gap-2">
@@ -383,7 +408,7 @@ function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar }) {
               Cancelar
             </button>
             <button onClick={cobrar} disabled={enviando} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
-              {enviando ? 'Registrando…' : `Recibí ${formatearPesos(alumno.precio_plan)} en efectivo`}
+              {enviando ? 'Registrando…' : `Recibí ${formatearPesos(alumno.precio_plan)} ${medio === 'Efectivo' ? 'en efectivo' : 'por transferencia'}`}
             </button>
           </div>
         </>
@@ -1050,6 +1075,45 @@ function ResultadoCierre({ resultado, alTerminar }) {
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------
+// Cobros del dueño: sin turno ni kiosco
+// ---------------------------------------------------------------
+const PESTANAS_DUENO = [
+  { id: 'Cuota', texto: 'Cobrar cuota' },
+  { id: 'Subalquiler', texto: 'Subalquiler' },
+]
+
+function CobrosDueno() {
+  const [pestana, setPestana] = useState('Cuota')
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-xl font-semibold">Cobros</h1>
+        <p className="text-sm text-neutral-400">Para anotar lo que te pagan directo a vos.</p>
+      </div>
+      <div className="rounded-xl border border-sky-900 bg-sky-950/40 px-4 py-3 text-sm text-sky-200">
+        Lo que cobres acá queda registrado a tu nombre, fuera de la caja de los recepcionistas: no cambia el cierre de ningún turno.
+        La caja y el kiosco los manejan los recepcionistas.
+      </div>
+      <div className="flex gap-1 overflow-x-auto border-b border-neutral-800">
+        {PESTANAS_DUENO.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => setPestana(p.id)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+              pestana === p.id ? 'border-white text-white' : 'border-transparent text-neutral-400 hover:text-white'
+            }`}
+          >
+            {p.texto}
+          </button>
+        ))}
+      </div>
+      {pestana === 'Cuota' && <CobrarCuota esDueno />}
+      {pestana === 'Subalquiler' && <Subalquiler />}
     </div>
   )
 }
