@@ -55,3 +55,5 @@ Decisión del 12/11/2026:
   (Como sabe cuánto contó, podría deducir el esperado sumando la diferencia; ocultarlo del todo sería la opción C.)
 - **Dueño:** aviso dentro de la app, arriba de Ingresos, con cada cierre con diferencia (quién, cuándo, inicial, cobrado, esperado, contado y justificación) hasta que lo marca **revisado** (`marcar_cierre_revisado`, vista `v_cierres_caja`).
 - **Mejora futura:** aviso por mail al dueño (requiere un servicio de envío de mails y una Edge Function).
+
+Diagrama: `img/diagrama-estados-turno.png`.
