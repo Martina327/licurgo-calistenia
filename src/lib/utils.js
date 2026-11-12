@@ -84,6 +84,7 @@ const MENSAJES = {
   MODALIDAD_INVALIDA: 'Elegí si es por hora o mensual.',
   MONTO_CONTADO_INVALIDO: 'Ingresá el efectivo que contaste (0 o más).',
   NO_SE_PUEDE_JUSTIFICAR: 'Ese cierre ya tiene una justificación o no tiene diferencia.',
+  CIERRE_YA_REVISADO: 'Ese cierre ya estaba revisado.',
 }
 export const mensajeError = (error) => {
   if (!error) return ''

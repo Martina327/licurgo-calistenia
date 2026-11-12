@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatearPesos } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
+import AvisoCierres from '../../components/AvisoCierres'
 
 const CONCEPTOS = ['Cuota', 'Kiosco', 'Subalquiler']
 
@@ -40,6 +41,7 @@ export default function DashboardIngresos() {
 
   return (
     <div className="space-y-4">
+      <AvisoCierres />
       <div>
         <h1 className="text-xl font-semibold">Ingresos · últimos 30 días</h1>
         <p className="text-3xl font-bold">{formatearPesos(resumen.total)}</p>
