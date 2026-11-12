@@ -1,5 +1,9 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import InstalarApp from './InstalarApp'
+import LayoutAlumno from './LayoutAlumno'
 
 // Menú de cada rol. El SuperAdmin ve también las secciones de los demás roles.
 const MENU = {
@@ -7,32 +11,40 @@ const MENU = {
     { to: '/admin', texto: 'Ingresos', end: true },
     { to: '/admin/productos', texto: 'Productos' },
     { to: '/admin/salones', texto: 'Salones' },
+    { to: '/admin/concurrencia', texto: 'Concurrencia' },
     { to: '/recepcion', texto: 'Mostrador', end: true },
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
     { to: '/recepcion/caja', texto: 'Caja' },
+    { to: '/recepcion/comprobantes', texto: 'Comprobantes', corto: 'Comprob.', contador: 'comprobantes' },
     { to: '/coach', texto: 'Rutinas', end: true },
     { to: '/coach/plantillas', texto: 'Plantillas' },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
+    { to: '/admin/datos-cobro', texto: 'Datos de cobro', corto: 'Cobro' },
   ],
   Recepcionista: [
     { to: '/recepcion', texto: 'Mostrador', end: true },
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
     { to: '/recepcion/caja', texto: 'Caja' },
+    { to: '/recepcion/comprobantes', texto: 'Comprobantes', corto: 'Comprob.', contador: 'comprobantes' },
   ],
   Coach: [
     { to: '/coach', texto: 'Alumnos y rutinas', corto: 'Alumnos', end: true },
     { to: '/coach/plantillas', texto: 'Plantillas' },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
   ],
-  Alumno: [
-    { to: '/alumno', texto: 'Mi membresía', corto: 'Membresía', end: true },
-    { to: '/alumno/rutina', texto: 'Mi rutina' },
-  ],
 }
 
 export default function Layout() {
+  const { perfil } = useAuth()
+  // El alumno usa la app del celular: pestañas abajo y pantallas secundarias
+  if (perfil.rol === 'Alumno') return <LayoutAlumno />
+  return <LayoutStaff />
+}
+
+function LayoutStaff() {
   const { perfil, cerrarSesion } = useAuth()
   const items = MENU[perfil.rol] ?? []
+  const pendientes = useComprobantesPendientes(items.some((i) => i.contador === 'comprobantes'))
 
   return (
     <div className="min-h-screen">
@@ -55,6 +67,9 @@ export default function Layout() {
               >
                 {/* En el celular, el nombre corto para que entre todo el menú */}
                 {i.corto ? <><span className="sm:hidden">{i.corto}</span><span className="hidden sm:inline">{i.texto}</span></> : i.texto}
+                {i.contador === 'comprobantes' && pendientes > 0 && (
+                  <span aria-label={`${pendientes} pendientes`} className="ml-1.5 rounded-full bg-amber-400 px-1.5 text-xs font-semibold text-neutral-950">{pendientes}</span>
+                )}
               </NavLink>
             ))}
           </nav>
@@ -73,6 +88,23 @@ export default function Layout() {
       <main className="mx-auto max-w-5xl px-4 py-6">
         <Outlet />
       </main>
+      <InstalarApp />
     </div>
   )
+}
+
+// Comprobantes por revisar (B5): se vuelve a contar al cambiar de pantalla y al revisar uno
+function useComprobantesPendientes(activo) {
+  const { pathname } = useLocation()
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    if (!activo) return
+    let cancelado = false
+    const contar = () => supabase.from('comprobantes_pago').select('id', { count: 'exact', head: true }).eq('estado', 'Pendiente')
+      .then(({ count }) => { if (!cancelado) setN(count ?? 0) })
+    contar()
+    window.addEventListener('licurgo:comprobantes', contar) // la bandeja avisa cuando aprueba o rechaza
+    return () => { cancelado = true; window.removeEventListener('licurgo:comprobantes', contar) }
+  }, [activo, pathname])
+  return n
 }

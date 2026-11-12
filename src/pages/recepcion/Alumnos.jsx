@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { esDniValido, formatearFecha, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
@@ -44,6 +45,16 @@ export default function Alumnos() {
   useEffect(() => {
     cargar()
   }, [cargar])
+
+  // ?editar=<alumno_id>: llega desde Comprobantes (B5) para completar la ficha antes del primer pago
+  const [params, setParams] = useSearchParams()
+  const editarId = params.get('editar')
+  useEffect(() => {
+    if (!editarId || cargando) return
+    const alumno = alumnos.find((a) => a.alumno_id === editarId)
+    if (alumno) setEditando(alumno)
+    setParams({}, { replace: true })
+  }, [editarId, cargando, alumnos, setParams])
 
   const terminar = async (texto) => {
     setMostrarAlta(false)
