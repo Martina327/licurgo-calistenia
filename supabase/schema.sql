@@ -3539,8 +3539,9 @@ SELECT alumno_id, dni, nombre, apellido, telefono, 'Certificado',
 --  Correr en el SQL Editor de Supabase DESPUÉS de 20261112_01.
 --  Es re-ejecutable.
 --
---    · v_movimientos: cada ingreso con fecha local, quién lo cobró y a
---      quién (solo SuperAdmin; el resto de los roles no ve filas).
+--    · v_movimientos: cada ingreso con fecha local, quién lo cobró, a
+--      quién y, en el kiosco, qué productos se vendieron (solo
+--      SuperAdmin; el resto de los roles no ve filas).
 --    · configuracion_admin: una sola fila con el link a la planilla de
 --      Google Sheets de la administración (RF14). Solo el dueño la ve y
 --      la cambia (RNF05).
@@ -3557,7 +3558,7 @@ SELECT i.id,
        i.concepto,
        i.medio_pago,
        i.monto,
-       i.detalle,
+       coalesce(i.detalle, vi.productos)                              AS detalle,
        r.nombre || ' ' || r.apellido                                   AS cobrado_por,
        r.rol                                                           AS rol_cobro,
        a.nombre || ' ' || a.apellido                                   AS alumno,
@@ -3565,6 +3566,13 @@ SELECT i.id,
   FROM public.ingresos i
   JOIN public.usuarios r      ON r.id = i.registrado_por
   LEFT JOIN public.usuarios a ON a.id = i.alumno_id
+  -- Kiosco: qué se vendió, ej. "2× Gatorade 500 ml, 1× Barra de cereal"
+  LEFT JOIN LATERAL (
+        SELECT string_agg(it.cantidad || '× ' || p.nombre, ', ' ORDER BY p.nombre) AS productos
+          FROM public.venta_items it
+          JOIN public.productos p ON p.id = it.producto_id
+         WHERE it.venta_id = i.venta_id
+       ) vi ON i.venta_id IS NOT NULL
  WHERE public.mi_rol() = 'SuperAdmin';
 GRANT SELECT ON public.v_movimientos TO authenticated;
 
