@@ -180,7 +180,7 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
       : await supabase.from('productos').update(fila).eq('id', producto.id)
     setEnviando(false)
     if (error) return setError(errorProducto(error))
-    alGuardar(esNuevo ? `${nombre} quedó a la venta en el kiosco.` : `${nombre} actualizado.`)
+    alGuardar(esNuevo ? `${nombre} quedó a la venta en el kiosco.` : `Cambios guardados en ${nombre}.`)
   }
 
   return (
