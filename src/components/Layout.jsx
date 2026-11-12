@@ -9,6 +9,7 @@ const MENU = {
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
     { to: '/recepcion/caja', texto: 'Caja' },
     { to: '/coach', texto: 'Rutinas', end: true },
+    { to: '/coach/plantillas', texto: 'Plantillas' },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
   ],
   Recepcionista: [
@@ -17,11 +18,12 @@ const MENU = {
     { to: '/recepcion/caja', texto: 'Caja' },
   ],
   Coach: [
-    { to: '/coach', texto: 'Alumnos y rutinas', end: true },
+    { to: '/coach', texto: 'Alumnos y rutinas', corto: 'Alumnos', end: true },
+    { to: '/coach/plantillas', texto: 'Plantillas' },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
   ],
   Alumno: [
-    { to: '/alumno', texto: 'Mi membresía', end: true },
+    { to: '/alumno', texto: 'Mi membresía', corto: 'Membresía', end: true },
     { to: '/alumno/rutina', texto: 'Mi rutina' },
   ],
 }
@@ -33,21 +35,24 @@ export default function Layout() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-neutral-800 bg-neutral-950/90 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3">
-          <span className="font-bold tracking-wide">LICURGO</span>
-          <nav className="flex flex-1 gap-1 overflow-x-auto">
+        {/* Altura fija (56px + 1px de borde): la barra de progreso del alumno se pega justo debajo (top-[57px]) */}
+        <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-4 sm:gap-4">
+          {/* En el celular se oculta la marca para que entre el menú completo */}
+          <span className="hidden shrink-0 font-bold tracking-wide sm:inline">LICURGO</span>
+          <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none]">
             {items.map((i) => (
               <NavLink
                 key={i.to}
                 to={i.to}
                 end={i.end}
                 className={({ isActive }) =>
-                  `whitespace-nowrap rounded-md px-3 py-1.5 text-sm ${
+                  `whitespace-nowrap rounded-md px-2 py-1.5 text-sm sm:px-3 ${
                     isActive ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'
                   }`
                 }
               >
-                {i.texto}
+                {/* En el celular, el nombre corto para que entre todo el menú */}
+                {i.corto ? <><span className="sm:hidden">{i.corto}</span><span className="hidden sm:inline">{i.texto}</span></> : i.texto}
               </NavLink>
             ))}
           </nav>
@@ -57,7 +62,7 @@ export default function Layout() {
           </div>
           <button
             onClick={cerrarSesion}
-            className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800"
+            className="shrink-0 rounded-md border border-neutral-700 px-2.5 py-1.5 text-sm text-neutral-300 hover:bg-neutral-800 sm:px-3"
           >
             Salir
           </button>
