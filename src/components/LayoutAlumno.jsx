@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import InstalarApp from './InstalarApp'
-import { Atras, IconoInicio, IconoRutina, IconoSalir } from './Iconos'
+import { Atras, IconoInicio, IconoMensualidad, IconoRutina, IconoSalir } from './Iconos'
 
-// Pantallas secundarias: se abren desde Inicio y vuelven con "‹"
+// Pantallas secundarias: se abren desde Mensualidad y vuelven con "‹"
 const SECUNDARIAS = {
   '/alumno/pagar': 'Pagar por transferencia',
   '/alumno/comprobantes': 'Mis comprobantes',
@@ -13,6 +13,7 @@ const SECUNDARIAS = {
 const PESTANIAS = [
   { to: '/alumno', texto: 'Inicio', Icono: IconoInicio, end: true },
   { to: '/alumno/rutina', texto: 'Rutina', Icono: IconoRutina },
+  { to: '/alumno/mensualidad', texto: 'Mensualidad', Icono: IconoMensualidad, incluye: Object.keys({ '/alumno/pagar': 1, '/alumno/comprobantes': 1 }) },
 ]
 
 // La app del alumno con forma de app de celular (PWA, RNF03):
@@ -29,7 +30,7 @@ export default function LayoutAlumno() {
         <div className="mx-auto flex h-14 max-w-md items-center gap-2 px-4">
           {secundaria ? (
             <>
-              <Link to="/alumno" aria-label="Volver" className="-ml-2 flex h-10 w-10 items-center justify-center rounded-full text-neutral-200 active:bg-neutral-800">
+              <Link to="/alumno/mensualidad" aria-label="Volver" className="-ml-2 flex h-10 w-10 items-center justify-center rounded-full text-neutral-200 active:bg-neutral-800">
                 <Atras />
               </Link>
               <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{secundaria}</h1>
@@ -51,10 +52,10 @@ export default function LayoutAlumno() {
       <nav aria-label="Secciones"
         className="fixed inset-x-0 bottom-0 z-20 border-t border-neutral-800 bg-neutral-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
         <div className="mx-auto flex max-w-md">
-          {PESTANIAS.map(({ to, texto, Icono, end }) => (
+          {PESTANIAS.map(({ to, texto, Icono, end, incluye }) => (
             <NavLink key={to} to={to} end={end}
               className={({ isActive }) => {
-                const activa = isActive || (end && SECUNDARIAS[pathname])
+                const activa = isActive || incluye?.includes(pathname)
                 return `flex flex-1 flex-col items-center gap-0.5 pb-2 pt-2.5 text-[11px] font-medium ${activa ? 'text-white' : 'text-neutral-500'}`
               }}>
               <Icono className="h-6 w-6" />

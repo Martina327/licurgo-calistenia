@@ -31,3 +31,10 @@ export const IconoCheck = (p) => <Base {...p}><path d="m5 12.5 4.5 4.5L19 7" /><
 export const IconoSalir = (p) => (
   <Base {...p}><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" /><path d="M10 16l4-4-4-4M14 12H4" /></Base>
 )
+// Tarjeta: la mensualidad
+export const IconoMensualidad = (p) => (
+  <Base {...p}><rect x="3" y="5.5" width="18" height="13" rx="2.5" /><path d="M3 10h18M7 15h3" /></Base>
+)
+export const IconoFuego = (p) => (
+  <Base {...p}><path d="M12 22c4 0 7-2.8 7-6.8 0-2.6-1.3-4.5-2.7-6-.3 1.6-1.1 2.6-2.2 3 .3-3.3-1.2-6.3-4.1-8.2.2 3-1.4 4.7-2.9 6.4C5.9 11.8 5 13.3 5 15.2 5 19.2 8 22 12 22z" /></Base>
+)

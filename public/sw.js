@@ -14,7 +14,7 @@
 //
 // Para forzar una limpieza total de cachés, cambiar VERSION.
 // ---------------------------------------------------------------
-const VERSION = 'licurgo-v2'
+const VERSION = 'licurgo-v3'
 const CACHE_APP = `${VERSION}-app`
 const CACHE_ASSETS = `${VERSION}-assets`
 const MAX_ASSETS = 60 // los assets de deploys viejos se van descartando

@@ -25,7 +25,7 @@ export default function PagarCuota() {
       <Estado icono={<IconoCheck className="h-8 w-8" />} tono="bg-emerald-500/15 text-emerald-300"
         titulo="¡Comprobante enviado!"
         texto="Recepción lo va a revisar. Cuando lo apruebe, tu vencimiento se corre 30 días.">
-        <Link to="/alumno" className="block w-full rounded-2xl bg-white py-3.5 text-center font-semibold text-neutral-950">Volver al inicio</Link>
+        <Link to="/alumno/mensualidad" className="block w-full rounded-2xl bg-white py-3.5 text-center font-semibold text-neutral-950">Volver a Mensualidad</Link>
       </Estado>
     )
   }
