@@ -57,12 +57,14 @@ export default function DashboardIngresos() {
   const resumen = useMemo(() => resumir(movs), [movs])
   const serie = useMemo(() => (rangoValido ? serieDiaria(movs, rango.desde, rango.hasta) : []), [movs, rango.desde, rango.hasta, rangoValido])
 
-  const descargar = () => {
-    const blob = new Blob([aCsv(movs)], { type: 'text/csv;charset=utf-8' })
+  // Descarga lo que se ve en la tabla: si hay un concepto filtrado, solo ese
+  const descargar = (filas, concepto) => {
+    const blob = new Blob([aCsv(filas)], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
+    const sufijo = concepto ? `_${NOMBRE_CONCEPTO[concepto].toLowerCase()}` : ''
     a.href = url
-    a.download = `ingresos_${rango.desde}_a_${rango.hasta}.csv`
+    a.download = `ingresos${sufijo}_${rango.desde}_a_${rango.hasta}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -233,8 +235,8 @@ function Movimientos({ movs, alDescargar }) {
             </button>
           ))}
         </div>
-        <button onClick={alDescargar} disabled={movs.length === 0} className="rounded-lg border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-800 disabled:opacity-40">
-          Descargar CSV
+        <button onClick={() => alDescargar(visibles, filtro === 'Todos' ? null : filtro)} disabled={visibles.length === 0} className="rounded-lg border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-800 disabled:opacity-40">
+          {filtro === 'Todos' ? 'Descargar CSV' : `Descargar CSV de ${NOMBRE_CONCEPTO[filtro].toLowerCase()}`}
         </button>
       </div>
       {visibles.length === 0 ? (

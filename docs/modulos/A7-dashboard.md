@@ -18,7 +18,7 @@ feature/a6-personal
 | Total del período | Suma de todos los ingresos; aclara cuánto efectivo cobró el dueño fuera de la caja |
 | Tarjetas | Cuotas, Kiosco y Subalquileres: total, % del total, cantidad de cobros, efectivo y transferencia |
 | Ingresos por día | Barras apiladas por concepto, un día por barra (incluye días sin ingresos) |
-| Movimientos | Cada ingreso: fecha y hora, concepto, alumno o detalle, medio, quién cobró y monto; filtro por concepto; **Descargar CSV** (separado por `;`, abre bien en Sheets y Excel) |
+| Movimientos | Cada ingreso: fecha y hora, concepto, alumno o detalle (en el kiosco, los productos vendidos), medio, quién cobró y monto; filtro por concepto; **Descargar CSV** de lo que se ve (si hay un concepto filtrado, baja solo ese; separado por `;`, abre bien en Sheets y Excel) |
 | Cierres de caja | Historial del período: recepcionista, esperado, contado, diferencia, justificación y si falta revisar |
 | Planilla | **Abrir planilla** de Google Sheets en otra pestaña; si no hay link, **Cargar link de la planilla** |
 
