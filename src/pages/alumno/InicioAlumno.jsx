@@ -160,7 +160,7 @@ function EntrenarHoy({ dia, hechoHoy, hayRutina }) {
     return <p className="rounded-2xl bg-neutral-900 px-4 py-3 text-sm text-neutral-400">Cuando tu coach te arme la rutina, vas a verla acá.</p>
   }
   return (
-    <Link to="/alumno/rutina" className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-neutral-950 active:bg-neutral-200">
+    <Link to={hechoHoy || !dia ? '/alumno/rutina' : `/alumno/rutina/dia/${dia.numero}`} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-neutral-950 active:bg-neutral-200">
       <span className="min-w-0 flex-1">
         <span className="block text-xs font-semibold text-neutral-500">{hechoHoy ? 'Ya entrenaste hoy 💪' : 'Hoy te toca'}</span>
         <span className="block truncate text-lg font-bold">

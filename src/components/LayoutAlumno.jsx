@@ -4,11 +4,12 @@ import { useAuth } from '../context/AuthContext'
 import InstalarApp from './InstalarApp'
 import { Atras, IconoInicio, IconoMensualidad, IconoRutina, IconoSalir } from './Iconos'
 
-// Pantallas secundarias: se abren desde Mensualidad y vuelven con "‹"
-const SECUNDARIAS = {
-  '/alumno/pagar': 'Pagar por transferencia',
-  '/alumno/comprobantes': 'Mis comprobantes',
-}
+// Pantallas secundarias: se abren desde otra pantalla y vuelven con "‹"
+const SECUNDARIAS = [
+  { ruta: /^\/alumno\/pagar$/, titulo: 'Pagar por transferencia', volver: '/alumno/mensualidad' },
+  { ruta: /^\/alumno\/comprobantes$/, titulo: 'Mis comprobantes', volver: '/alumno/mensualidad' },
+  { ruta: /^\/alumno\/rutina\/dia\/\d+$/, titulo: 'Mi rutina', volver: '/alumno/rutina' },
+]
 
 const PESTANIAS = [
   { to: '/alumno', texto: 'Inicio', Icono: IconoInicio, end: true },
@@ -22,7 +23,7 @@ const PESTANIAS = [
 // La barra superior mide 56px + 1px de borde: la barra de progreso de la rutina se pega debajo (top-[57px]).
 export default function LayoutAlumno() {
   const { pathname } = useLocation()
-  const secundaria = SECUNDARIAS[pathname]
+  const secundaria = SECUNDARIAS.find((x) => x.ruta.test(pathname))
 
   return (
     <div className="min-h-screen">
@@ -30,10 +31,10 @@ export default function LayoutAlumno() {
         <div className="mx-auto flex h-14 max-w-md items-center gap-2 px-4">
           {secundaria ? (
             <>
-              <Link to="/alumno/mensualidad" aria-label="Volver" className="-ml-2 flex h-10 w-10 items-center justify-center rounded-full text-neutral-200 active:bg-neutral-800">
+              <Link to={secundaria.volver} aria-label="Volver" className="-ml-2 flex h-10 w-10 items-center justify-center rounded-full text-neutral-200 active:bg-neutral-800">
                 <Atras />
               </Link>
-              <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{secundaria}</h1>
+              <span className="min-w-0 flex-1 truncate text-base font-semibold">{secundaria.titulo}</span>
             </>
           ) : (
             <>
