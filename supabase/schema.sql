@@ -26,13 +26,13 @@ DROP TRIGGER IF EXISTS trg_nuevo_usuario_auth ON auth.users;
 DROP VIEW IF EXISTS public.v_rutina_activa, public.v_membresias, public.v_alertas,
                     public.v_invitaciones_pendientes,
                     public.v_ingresos_diarios, public.v_concurrencia,
-                    public.v_rutina_alumno, public.v_alumnos_baja, public.v_cierres_caja, public.v_personal CASCADE;
+                    public.v_rutina_alumno, public.v_alumnos_baja, public.v_cierres_caja, public.v_personal, public.v_movimientos CASCADE;
 
 DROP TABLE IF EXISTS
     -- esquema v1 (modulo_coach.sql)
     public.fichas_observaciones, public.item_ejercicio, public.rutina_dia,
     -- esquema v2
-    public.pase_libre_historial, public.datos_cobro, public.dias_completados, public.rutinas_plantilla, public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
+    public.configuracion_admin, public.pase_libre_historial, public.datos_cobro, public.dias_completados, public.rutinas_plantilla, public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
     public.ejercicios, public.invitaciones_retomar, public.asistencias, public.ingresos, public.venta_items,
     public.ventas, public.productos, public.espacios_alquiler, public.turnos_caja,
     public.comprobantes_pago, public.certificados_aptos, public.alumnos,
@@ -60,7 +60,9 @@ DROP FUNCTION IF EXISTS public.fn_set_fecha_actualizacion, public.fn_validar_rol
     -- Pareja A · A6
     public._generar_clave, public._personal_editable, public.alta_personal, public.editar_personal,
     public.cambiar_estado_personal, public.restablecer_clave_personal,
-    public.asignar_pase_libre, public.quitar_pase_libre CASCADE;
+    public.asignar_pase_libre, public.quitar_pase_libre,
+    -- Pareja A · A7
+    public.guardar_planilla_url CASCADE;
 
 -- Usuarios mock de Supabase Auth (por DNI)
 DELETE FROM auth.users
@@ -3525,6 +3527,80 @@ SELECT alumno_id, dni, nombre, apellido, telefono, 'Certificado',
   FROM public.v_membresias
  WHERE estado_alumno <> 'Inactivo'
    AND estado_certificado IN ('Por vencer', 'Vencido', 'Sin certificado');
+
+
+-- ---------------------------------------------------------------------
+-- 19.21 PAREJA A · A7 DASHBOARD DE INGRESOS (migración 20261112_03)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  A7 · Dashboard de ingresos (CU12, RF07, RF14, RNF01) · Pareja A
+--
+--  Correr en el SQL Editor de Supabase DESPUÉS de 20261112_01.
+--  Es re-ejecutable.
+--
+--    · v_movimientos: cada ingreso con fecha local, quién lo cobró y a
+--      quién (solo SuperAdmin; el resto de los roles no ve filas).
+--    · configuracion_admin: una sola fila con el link a la planilla de
+--      Google Sheets de la administración (RF14). Solo el dueño la ve y
+--      la cambia (RNF05).
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- 1. Movimientos (detalle de ingresos para el dashboard y el CSV)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW public.v_movimientos WITH (security_invoker = true) AS
+SELECT i.id,
+       (i.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS fecha,
+       i.created_at,
+       i.concepto,
+       i.medio_pago,
+       i.monto,
+       i.detalle,
+       r.nombre || ' ' || r.apellido                                   AS cobrado_por,
+       r.rol                                                           AS rol_cobro,
+       a.nombre || ' ' || a.apellido                                   AS alumno,
+       i.turno_id IS NULL AND i.medio_pago = 'Efectivo'                AS fuera_de_caja
+  FROM public.ingresos i
+  JOIN public.usuarios r      ON r.id = i.registrado_por
+  LEFT JOIN public.usuarios a ON a.id = i.alumno_id
+ WHERE public.mi_rol() = 'SuperAdmin';
+GRANT SELECT ON public.v_movimientos TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 2. Link a la planilla de Google Sheets (RF14)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.configuracion_admin (
+    id            BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),   -- una sola fila
+    planilla_url  TEXT CHECK (planilla_url IS NULL OR planilla_url ~ '^https://'),
+    actualizado_at  TIMESTAMPTZ,
+    actualizado_por UUID REFERENCES public.usuarios(id)
+);
+INSERT INTO public.configuracion_admin (id) VALUES (TRUE) ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE public.configuracion_admin ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS configuracion_admin_select ON public.configuracion_admin;
+CREATE POLICY configuracion_admin_select ON public.configuracion_admin FOR SELECT TO authenticated
+    USING (public.mi_rol() = 'SuperAdmin');
+REVOKE INSERT, UPDATE, DELETE ON public.configuracion_admin FROM anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.guardar_planilla_url(p_url TEXT)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_url TEXT := nullif(trim(coalesce(p_url, '')), '');
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    IF v_url IS NOT NULL AND v_url !~ '^https://' THEN
+        RAISE EXCEPTION 'URL_INVALIDA';
+    END IF;
+    UPDATE public.configuracion_admin
+       SET planilla_url = v_url, actualizado_at = now(), actualizado_por = auth.uid()
+     WHERE id;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.guardar_planilla_url(TEXT) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.guardar_planilla_url(TEXT) TO authenticated;
 
 
 -- ---------------------------------------------------------------------
