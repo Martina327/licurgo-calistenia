@@ -704,6 +704,22 @@ function Subalquiler() {
     if (!datos.locatario.trim()) return setError('Escribí quién alquila.')
 
     setEnviando(true)
+    // El dueño pudo cambiar el precio con la pantalla abierta: se relee antes de cobrar
+    const { data: vigente } = await supabase
+      .from('espacios_alquiler')
+      .select('id, nombre, precio_hora, precio_mensual, activo')
+      .eq('id', salon.id)
+      .maybeSingle()
+    if (!vigente?.activo) {
+      setEnviando(false)
+      return setError('Ese salón ya no está disponible. Recargá la pantalla.')
+    }
+    if (Number(vigente.precio_hora) !== Number(salon.precio_hora) || Number(vigente.precio_mensual ?? 0) !== Number(salon.precio_mensual ?? 0)) {
+      setEnviando(false)
+      setSalones((lista) => lista.map((x) => (x.id === vigente.id ? vigente : x)))
+      return setError('El dueño cambió el precio de este salón. Revisá el total nuevo antes de cobrar.')
+    }
+
     const { data, error } = await supabase.rpc('registrar_cobro_alquiler', {
       p_espacio_id: salon.id,
       p_modalidad: datos.modalidad,
