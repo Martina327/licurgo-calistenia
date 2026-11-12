@@ -32,7 +32,7 @@ DROP TABLE IF EXISTS
     -- esquema v1 (modulo_coach.sql)
     public.fichas_observaciones, public.item_ejercicio, public.rutina_dia,
     -- esquema v2
-    public.dias_completados, public.rutinas_plantilla, public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
+    public.datos_cobro, public.dias_completados, public.rutinas_plantilla, public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
     public.ejercicios, public.invitaciones_retomar, public.asistencias, public.ingresos, public.venta_items,
     public.ventas, public.productos, public.espacios_alquiler, public.turnos_caja,
     public.comprobantes_pago, public.certificados_aptos, public.alumnos,
@@ -47,7 +47,7 @@ DROP FUNCTION IF EXISTS public.fn_set_fecha_actualizacion, public.fn_validar_rol
     public.fn_validar_roles_ficha, public.hoy_ar, public.mi_rol, public.es_staff,
     public._exigir_rol, public._turno_abierto, public._extender_membresia,
     public.fn_nuevo_usuario_auth, public.fn_validar_roles_coach_alumno,
-    public.fn_tocar_rutina, public.registrar_checkin, public.aprobar_comprobante,
+    public.fn_tocar_rutina, public.registrar_checkin, public.metricas_concurrencia, public.whatsapp_contacto, public.aprobar_comprobante,
     public.rechazar_comprobante, public.registrar_pago_efectivo, public.registrar_venta,
     public.registrar_cobro_alquiler, public.abrir_turno, public.cerrar_turno,
     public.justificar_cierre, public.registrar_invitacion, public._crear_usuario_mock,
@@ -2354,7 +2354,235 @@ GRANT SELECT, INSERT, DELETE ON public.dias_completados TO authenticated;
 
 
 -- ---------------------------------------------------------------------
--- 19.13 PAREJA A · A2 COBRO DE CUOTA (migración 20261108_01)
+-- 19.13 PAREJA B · B4/B5 COMPROBANTES DE TRANSFERENCIA (migración 20261112_01)
+--       Datos de cobro (CBU/alias), un pendiente por alumno, v_comprobantes.
+--       La regla de vencimiento la pone A2 (_extender_membresia).
+-- ---------------------------------------------------------------------
+
+
+-- ---------------------------------------------------------------------
+-- 1. Datos para transferir (una sola fila)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.datos_cobro (
+    id              BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),   -- fila única
+    titular         TEXT,
+    banco           TEXT,
+    cbu             TEXT CHECK (cbu ~ '^[0-9]{22}$'),
+    alias           TEXT CHECK (alias ~ '^[A-Za-z0-9.-]{6,20}$'),
+    cuit            TEXT CHECK (cuit ~ '^[0-9]{11}$'),
+    actualizado_por UUID REFERENCES public.usuarios(id),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Arranca vacía: el dueño carga los datos reales desde "Datos de cobro"
+INSERT INTO public.datos_cobro (id) VALUES (TRUE) ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE public.datos_cobro ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS datos_cobro_select ON public.datos_cobro;
+DROP POLICY IF EXISTS datos_cobro_update ON public.datos_cobro;
+CREATE POLICY datos_cobro_select ON public.datos_cobro FOR SELECT TO authenticated USING (TRUE);
+CREATE POLICY datos_cobro_update ON public.datos_cobro FOR UPDATE TO authenticated
+    USING (public.mi_rol() = 'SuperAdmin') WITH CHECK (public.mi_rol() = 'SuperAdmin');
+REVOKE ALL ON public.datos_cobro FROM anon, authenticated;
+GRANT SELECT ON public.datos_cobro TO authenticated;
+GRANT UPDATE (titular, banco, cbu, alias, cuit) ON public.datos_cobro TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.fn_datos_cobro_auditoria() RETURNS trigger
+LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN
+    NEW.actualizado_por := auth.uid();
+    NEW.updated_at := now();
+    RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS trg_datos_cobro_auditoria ON public.datos_cobro;
+CREATE TRIGGER trg_datos_cobro_auditoria BEFORE UPDATE ON public.datos_cobro
+    FOR EACH ROW EXECUTE FUNCTION public.fn_datos_cobro_auditoria();
+
+
+-- ---------------------------------------------------------------------
+-- 2. Un pendiente por alumno: hasta que recepción lo revise no sube otro
+-- ---------------------------------------------------------------------
+CREATE UNIQUE INDEX IF NOT EXISTS uq_comprobante_pendiente_por_alumno
+    ON public.comprobantes_pago (alumno_id) WHERE estado = 'Pendiente';
+
+
+-- ---------------------------------------------------------------------
+-- 3. Políticas del comprobante y su archivo
+-- ---------------------------------------------------------------------
+DROP POLICY IF EXISTS comprobantes_insert ON public.comprobantes_pago;
+CREATE POLICY comprobantes_insert ON public.comprobantes_pago FOR INSERT TO authenticated
+    WITH CHECK (alumno_id = auth.uid()
+                AND estado = 'Pendiente' AND revisado_por IS NULL AND revisado_at IS NULL
+                AND motivo_rechazo IS NULL
+                AND split_part(archivo_path, '/', 1) = auth.uid()::text);
+
+-- Archivo huérfano (se subió pero falló el alta): el alumno lo puede borrar.
+-- Un archivo ya registrado como comprobante es evidencia: nadie lo borra.
+DROP POLICY IF EXISTS "comprobantes_delete_huerfano" ON storage.objects;
+CREATE POLICY "comprobantes_delete_huerfano" ON storage.objects FOR DELETE TO authenticated
+    USING (bucket_id = 'comprobantes'
+           AND (storage.foldername(name))[1] = auth.uid()::text
+           AND NOT EXISTS (SELECT 1 FROM public.comprobantes_pago c WHERE c.archivo_path = name));
+
+
+-- ---------------------------------------------------------------------
+-- 4. Vista de comprobantes (RLS de las tablas: el alumno ve los suyos,
+--    recepción y SuperAdmin ven todos)
+-- ---------------------------------------------------------------------
+DROP VIEW IF EXISTS public.v_comprobantes;
+CREATE VIEW public.v_comprobantes WITH (security_invoker = true) AS
+SELECT
+    c.id, c.alumno_id, c.archivo_path, c.monto_declarado, c.estado, c.motivo_rechazo,
+    c.created_at, c.revisado_at,
+    u.nombre, u.apellido, u.dni, u.telefono,
+    a.fecha_vencimiento,
+    p.precio                                         AS precio_plan,
+    CASE
+        WHEN a.fecha_vencimiento IS NULL                    THEN 'En clase de prueba'
+        WHEN a.fecha_vencimiento < public.hoy_ar() - 30     THEN 'Inactivo'
+        ELSE 'Activo'
+    END                                              AS estado_alumno,
+    i.monto                                          AS monto_acreditado,
+    nullif(trim(coalesce(r.nombre, '') || ' ' || coalesce(r.apellido, '')), '') AS revisado_por_nombre
+FROM public.comprobantes_pago c
+JOIN public.usuarios u      ON u.id = c.alumno_id
+JOIN public.alumnos  a      ON a.usuario_id = c.alumno_id
+LEFT JOIN public.planes p   ON p.id = a.plan_id
+LEFT JOIN public.ingresos i ON i.comprobante_id = c.id
+LEFT JOIN public.usuarios r ON r.id = c.revisado_por;
+
+GRANT SELECT ON public.v_comprobantes TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 5. Aprobar: el monto acreditado tiene que ser positivo
+--    (el resto igual: +30 días con la regla de A2 vía _extender_membresia)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.aprobar_comprobante(p_comprobante_id UUID, p_monto NUMERIC DEFAULT NULL)
+RETURNS date
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_comp  public.comprobantes_pago;
+    v_monto NUMERIC;
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+
+    SELECT * INTO v_comp FROM public.comprobantes_pago WHERE id = p_comprobante_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'COMPROBANTE_INEXISTENTE'; END IF;
+    IF v_comp.estado <> 'Pendiente' THEN
+        RAISE EXCEPTION 'COMPROBANTE_YA_REVISADO: estado %', v_comp.estado;
+    END IF;
+    IF p_monto IS NOT NULL AND p_monto <= 0 THEN
+        RAISE EXCEPTION 'MONTO_INVALIDO';
+    END IF;
+
+    SELECT coalesce(p_monto, p.precio) INTO v_monto
+      FROM public.alumnos a LEFT JOIN public.planes p ON p.id = a.plan_id
+     WHERE a.usuario_id = v_comp.alumno_id;
+    IF v_monto IS NULL THEN
+        RAISE EXCEPTION 'SIN_MONTO: el alumno no tiene plan; indicá el monto acreditado';
+    END IF;
+
+    UPDATE public.comprobantes_pago
+       SET estado = 'Aprobado', revisado_por = auth.uid(), revisado_at = now()
+     WHERE id = p_comprobante_id;
+
+    INSERT INTO public.ingresos (concepto, medio_pago, monto, alumno_id, comprobante_id, registrado_por, detalle)
+    VALUES ('Cuota', 'Transferencia', v_monto, v_comp.alumno_id, v_comp.id, auth.uid(), 'Cuota - Transferencia');
+
+    -- Regla de vencimiento de Pareja A (A2): +30 días; primer pago exige ficha completa
+    RETURN public._extender_membresia(v_comp.alumno_id);
+END $$;
+REVOKE EXECUTE ON FUNCTION public.aprobar_comprobante(UUID, NUMERIC) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.aprobar_comprobante(UUID, NUMERIC) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 19.14 PAREJA B · B7 MÉTRICAS DE CONCURRENCIA Y CONTACTO (migración 20261112_02)
+-- ---------------------------------------------------------------------
+
+
+-- ---------------------------------------------------------------------
+-- 1. Métricas de concurrencia (CU13)
+--    promedio de una franja = asistencias en esa franja / cuántas veces
+--    hubo ese día de la semana en el rango (ej. 4 lunes en 30 días).
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.metricas_concurrencia(p_desde DATE, p_hasta DATE DEFAULT NULL)
+RETURNS JSONB
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_hasta DATE := coalesce(p_hasta, public.hoy_ar());
+    v_res   JSONB;
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    IF p_desde IS NULL OR v_hasta < p_desde OR v_hasta - p_desde > 366 THEN
+        RAISE EXCEPTION 'RANGO_INVALIDO';
+    END IF;
+
+    WITH a AS (
+        SELECT fecha, fecha_hora AT TIME ZONE 'America/Argentina/Buenos_Aires' AS local
+          FROM public.asistencias
+         WHERE fecha BETWEEN p_desde AND v_hasta
+    ),
+    dias AS (SELECT d::date AS fecha FROM generate_series(p_desde, v_hasta, interval '1 day') d),
+    por_dia AS (
+        SELECT d.fecha, count(a.fecha) AS n
+          FROM dias d LEFT JOIN a ON a.fecha = d.fecha
+         GROUP BY d.fecha
+    ),
+    veces AS (SELECT extract(isodow FROM fecha)::int AS dia, count(*) AS veces FROM dias GROUP BY 1),
+    por_dow AS (SELECT extract(isodow FROM fecha)::int AS dia, count(*) AS total FROM a GROUP BY 1),
+    franjas AS (
+        SELECT extract(isodow FROM local)::int AS dia, extract(hour FROM local)::int AS hora, count(*) AS total
+          FROM a GROUP BY 1, 2
+    )
+    SELECT jsonb_build_object(
+        'desde', p_desde,
+        'hasta', v_hasta,
+        'total', (SELECT count(*) FROM a),
+        'dias_con_asistencia', (SELECT count(*) FROM por_dia WHERE n > 0),
+        'dias', (SELECT jsonb_agg(jsonb_build_object('fecha', fecha, 'asistencias', n) ORDER BY fecha) FROM por_dia),
+        'por_dia_semana', (
+            SELECT jsonb_agg(jsonb_build_object(
+                       'dia', v.dia, 'veces', v.veces, 'total', coalesce(p.total, 0),
+                       'promedio', round(coalesce(p.total, 0)::numeric / v.veces, 1)) ORDER BY v.dia)
+              FROM veces v LEFT JOIN por_dow p ON p.dia = v.dia),
+        'franjas', (
+            SELECT coalesce(jsonb_agg(jsonb_build_object(
+                       'dia', f.dia, 'hora', f.hora, 'total', f.total,
+                       'promedio', round(f.total::numeric / v.veces, 1))), '[]'::jsonb)
+              FROM franjas f JOIN veces v ON v.dia = f.dia)
+    ) INTO v_res;
+    RETURN v_res;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.metricas_concurrencia(DATE, DATE) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.metricas_concurrencia(DATE, DATE) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 2. WhatsApp de contacto (RF13)
+-- ---------------------------------------------------------------------
+ALTER TABLE public.datos_cobro ADD COLUMN IF NOT EXISTS whatsapp TEXT;
+ALTER TABLE public.datos_cobro DROP CONSTRAINT IF EXISTS datos_cobro_whatsapp_check;
+ALTER TABLE public.datos_cobro ADD CONSTRAINT datos_cobro_whatsapp_check CHECK (whatsapp ~ '^[0-9]{10}$');
+GRANT UPDATE (titular, banco, cbu, alias, cuit, whatsapp) ON public.datos_cobro TO authenticated;
+
+-- El alumno no puede leer los datos del SuperAdmin (RLS de usuarios):
+-- esta función le devuelve solo el número de contacto.
+CREATE OR REPLACE FUNCTION public.whatsapp_contacto() RETURNS TEXT
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+    SELECT coalesce(
+        (SELECT whatsapp FROM public.datos_cobro WHERE id),
+        (SELECT telefono FROM public.usuarios
+          WHERE rol = 'SuperAdmin' AND activo AND telefono IS NOT NULL
+          ORDER BY created_at LIMIT 1));
+$$;
+REVOKE EXECUTE ON FUNCTION public.whatsapp_contacto() FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.whatsapp_contacto() TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 19.15 PAREJA A · A2 COBRO DE CUOTA (migración 20261108_01)
 --       Alumno inactivo que vuelve: los 30 días cuentan desde que paga.
 -- ---------------------------------------------------------------------
 
@@ -2413,8 +2641,10 @@ END $$;
 REVOKE EXECUTE ON FUNCTION public._extender_membresia(UUID) FROM PUBLIC, anon, authenticated;
 
 
+
+
 -- ---------------------------------------------------------------------
--- 19.14 PAREJA A · A3 KIOSCO: INGRESO DE MERCADERÍA (migración 20261111_01)
+-- 19.16 PAREJA A · A3 KIOSCO: INGRESO DE MERCADERÍA (migración 20261111_01)
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
