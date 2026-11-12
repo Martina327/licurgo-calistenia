@@ -42,13 +42,16 @@ export default function Layout() {
 function LayoutStaff() {
   const { perfil, cerrarSesion } = useAuth()
   const items = MENU[perfil.rol] ?? []
+  // El coach arma rutinas desde la compu: en pantallas grandes el editor usa más ancho
+  const { pathname } = useLocation()
+  const ancho = pathname.startsWith('/coach') ? 'max-w-7xl' : 'max-w-5xl'
   const pendientes = usePendientes(items.some((i) => i.contador))
 
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-neutral-800 bg-neutral-950/90 backdrop-blur">
         {/* Altura fija (56px + 1px de borde): la barra de progreso del alumno se pega justo debajo (top-[57px]) */}
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-4 sm:gap-4">
+        <div className={`mx-auto flex h-14 ${ancho} items-center gap-2 px-4 sm:gap-4`}>
           {/* En el celular se oculta la marca para que entre el menú completo */}
           <span className="hidden shrink-0 font-bold tracking-wide sm:inline">LICURGO</span>
           <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none]">
@@ -83,7 +86,7 @@ function LayoutStaff() {
           </button>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">
+      <main className={`mx-auto ${ancho} px-4 py-6`}>
         <Outlet />
       </main>
       <InstalarApp />

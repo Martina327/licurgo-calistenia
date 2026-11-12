@@ -93,32 +93,25 @@ export default function RutinaAlumno() {
     return null
   }
 
-  const guardar = async (comoNueva) => {
+  // Un solo "Guardar": si el alumno ya tiene rutina, la actualiza (no se pierde el
+  // historial de días completados); si no tiene, la crea.
+  const guardar = async () => {
     setAviso(null)
     const problema = validarRutina(rutina)
     if (problema) return setAviso({ tipo: 'error', texto: problema })
-    if (comoNueva && rutina.id && !window.confirm('La rutina actual quedará archivada y el alumno verá la nueva. ¿Continuar?')) return
 
     setGuardando(true)
     const { error } = await supabase.rpc('guardar_rutina', {
       p_alumno_id: alumnoId,
       p_nombre: rutina.nombre,
       p_objetivo: rutina.objetivo,
-      p_rutina_id: comoNueva ? null : rutina.id,
+      p_rutina_id: rutina.id,
       p_dias: aPayload(rutina.dias),
     })
     setGuardando(false)
     if (error) return setAviso({ tipo: 'error', texto: mensajeError(error) })
     await cargar()
-    setAviso({ tipo: 'ok', texto: comoNueva ? 'Rutina nueva guardada. La anterior quedó archivada.' : 'Cambios guardados.' })
-  }
-
-  const archivar = async () => {
-    if (!window.confirm('El alumno dejará de ver esta rutina. ¿Archivarla?')) return
-    const { error } = await supabase.from('rutinas').update({ activa: false }).eq('id', rutina.id)
-    if (error) return setAviso({ tipo: 'error', texto: mensajeError(error) })
-    await cargar()
-    setAviso({ tipo: 'ok', texto: 'Rutina archivada.' })
+    setAviso({ tipo: 'ok', texto: 'Rutina guardada. El alumno ya la ve.' })
   }
 
   if (cargando) return <Cargando />
@@ -140,8 +133,14 @@ export default function RutinaAlumno() {
         </p>
       </div>
 
-      <ResumenObservaciones alumnoId={alumnoId} observaciones={observaciones} />
+      {/* Celular: observaciones arriba y el editor abajo.
+          Compu: editor a la izquierda y observaciones fijas a la derecha mientras se arma la rutina. */}
+      <div className="space-y-4 lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-6 lg:space-y-0">
+      <aside className="lg:sticky lg:top-[73px] lg:order-2">
+        <ResumenObservaciones alumnoId={alumnoId} observaciones={observaciones} />
+      </aside>
 
+      <div className="min-w-0 space-y-4 lg:order-1">
       {aviso && <Aviso {...aviso} />}
 
       {!rutina ? (
@@ -157,31 +156,24 @@ export default function RutinaAlumno() {
           <EditorRutina key={editorKey} value={rutina} onChange={cambiar} ejercicios={ejercicios} diasHechos={diasHechos}
             plantillas={plantillas} onGuardarPlantilla={guardarPlantilla} onAviso={setAviso} origen={esteAlumno} />
 
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {cambios && <span className="mr-auto text-sm text-amber-300">Cambios sin guardar</span>}
-            {rutina.id && (
-              <button onClick={archivar} disabled={guardando} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:text-white">
-                Archivar rutina
-              </button>
-            )}
-            {cambios && (
+          <div className="sticky bottom-0 z-10 -mx-4 flex items-center gap-2 border-t border-neutral-800 bg-neutral-950/95 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur sm:mx-0 sm:rounded-xl sm:border">
+            <span className={`mr-auto text-sm ${cambios ? 'text-amber-300' : 'text-neutral-500'}`}>
+              {cambios ? 'Cambios sin guardar' : 'Todo guardado'}
+            </span>
+            {cambios && rutina.id && (
               <button onClick={cargar} disabled={guardando} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:text-white">
                 Descartar
               </button>
             )}
-            {rutina.id && (
-              <button onClick={() => guardar(true)} disabled={guardando}
-                className="rounded-lg border border-neutral-600 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-800 disabled:opacity-50">
-                Guardar como nueva
-              </button>
-            )}
-            <button onClick={() => guardar(false)} disabled={guardando || !cambios}
-              className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
-              {guardando ? 'Guardando…' : rutina.id ? 'Guardar cambios' : 'Guardar rutina'}
+            <button onClick={guardar} disabled={guardando || !cambios}
+              className="rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-neutral-950 disabled:opacity-50">
+              {guardando ? 'Guardando…' : 'Guardar'}
             </button>
           </div>
         </>
       )}
+      </div>
+      </div>
     </div>
   )
 }
@@ -203,7 +195,7 @@ function ResumenObservaciones({ alumnoId, observaciones }) {
           {observaciones.map((o) => (
             <li key={o.id} className="text-sm">
               <EtiquetaTipo tipo={o.tipo} /> <span className="font-medium">{o.titulo}</span>
-              <span className="text-neutral-400"> — {o.descripcion}</span>
+              <span className="text-neutral-400 lg:mt-0.5 lg:block"><span className="lg:hidden"> — </span>{o.descripcion}</span>
             </li>
           ))}
         </ul>
