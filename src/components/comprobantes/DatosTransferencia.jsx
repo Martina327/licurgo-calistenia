@@ -8,15 +8,15 @@ export default function DatosTransferencia({ datos, monto }) {
   const cargados = datos && (datos.cbu || datos.alias)
   if (!cargados) {
     return (
-      <p className="rounded-lg bg-neutral-800 px-3 py-2 text-sm text-neutral-300">
+      <p className="px-4 py-3 text-sm text-neutral-300">
         Todavía no están cargados los datos de la cuenta. Pedíselos a recepción.
       </p>
     )
   }
   return (
-    <dl className="divide-y divide-neutral-800 rounded-lg border border-neutral-800">
+    <dl className="divide-y divide-neutral-800">
       {datos.alias && <Fila etiqueta="Alias" valor={datos.alias} copiable />}
-      {datos.cbu && <Fila etiqueta="CBU" valor={`${datos.cbu.slice(0, 8)} ${datos.cbu.slice(8)}`} copiarComo={datos.cbu} copiable mono />}
+      {datos.cbu && <Fila etiqueta="CBU" valor={`${datos.cbu.slice(0, 8)} ${datos.cbu.slice(8)}`} copiarComo={datos.cbu} copiable mono apilado />}
       {datos.titular && <Fila etiqueta="Titular" valor={datos.titular} />}
       {datos.banco && <Fila etiqueta="Banco" valor={datos.banco} />}
       {datos.cuit && <Fila etiqueta="CUIT" valor={datos.cuit} />}
@@ -25,7 +25,7 @@ export default function DatosTransferencia({ datos, monto }) {
   )
 }
 
-function Fila({ etiqueta, valor, copiable, mono, copiarComo }) {
+function Fila({ etiqueta, valor, copiable, mono, copiarComo, apilado }) {
   const [copiado, setCopiado] = useState(false)
   const copiar = async () => {
     try {
@@ -36,16 +36,29 @@ function Fila({ etiqueta, valor, copiable, mono, copiarComo }) {
       // sin permiso de portapapeles: el dato igual se puede seleccionar a mano
     }
   }
+  const boton = copiable && (
+    <button type="button" onClick={copiar} aria-label={`Copiar ${etiqueta.toLowerCase()}`}
+      className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${copiado ? 'bg-emerald-500/15 text-emerald-300' : 'bg-neutral-800 text-neutral-200 active:bg-neutral-700'}`}>
+      {copiado ? 'Copiado' : 'Copiar'}
+    </button>
+  )
+  // Apilado: la etiqueta arriba y el valor a todo el ancho (el CBU no entra en una línea en el celular)
+  if (apilado) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        <div className="min-w-0 flex-1">
+          <dt className="text-sm text-neutral-400">{etiqueta}</dt>
+          <dd className={`select-all text-[15px] text-neutral-100 ${mono ? 'tabular-nums' : ''}`}>{valor}</dd>
+        </div>
+        {boton}
+      </div>
+    )
+  }
   return (
-    <div className="flex items-center gap-3 px-3 py-2">
-      <dt className="w-16 shrink-0 text-sm text-neutral-400">{etiqueta}</dt>
-      <dd className={`min-w-0 flex-1 select-all break-all text-sm text-neutral-100 ${mono ? 'font-mono tracking-tight' : ''}`}>{valor}</dd>
-      {copiable && (
-        <button type="button" onClick={copiar} aria-label={`Copiar ${etiqueta.toLowerCase()}`}
-          className={`shrink-0 rounded-md px-2 py-1 text-xs ${copiado ? 'bg-emerald-950 text-emerald-300' : 'border border-neutral-700 text-neutral-300 hover:bg-neutral-800'}`}>
-          {copiado ? 'Copiado' : 'Copiar'}
-        </button>
-      )}
+    <div className="flex items-center gap-3 px-4 py-2.5">
+      <dt className="w-14 shrink-0 text-sm text-neutral-400">{etiqueta}</dt>
+      <dd className="min-w-0 flex-1 select-all break-all text-sm text-neutral-100">{valor}</dd>
+      {boton}
     </div>
   )
 }

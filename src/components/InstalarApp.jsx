@@ -7,7 +7,7 @@ import {
 //   · Android / Chrome / Edge: botón "Instalar" que abre el diálogo del navegador.
 //   · iPhone / iPad: cómo hacerlo desde Compartir → "Agregar a inicio".
 // No aparece si ya se abrió desde el ícono, ni durante 14 días después de "Ahora no".
-export default function InstalarApp() {
+export default function InstalarApp({ sobrePestanias = false }) {
   const [disponible, setDisponible] = useState(puedeInstalar)
   const [descartado, setDescartado] = useState(() => descartadoReciente())
 
@@ -20,7 +20,9 @@ export default function InstalarApp() {
 
   return (
     <div role="dialog" aria-label="Instalar Licurgo"
-      className="fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      className={`fixed inset-x-0 z-30 px-3 ${sobrePestanias
+        ? 'bottom-[calc(4.25rem+env(safe-area-inset-bottom))] pb-2' // arriba de las pestañas del alumno
+        : 'bottom-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]'}`}>
       <div className="mx-auto flex max-w-md items-start gap-3 rounded-2xl border border-neutral-700 bg-neutral-900 p-3 shadow-2xl">
         <img src="/icons/icon-192.png" alt="" className="h-11 w-11 shrink-0 rounded-xl" />
         <div className="min-w-0 flex-1">

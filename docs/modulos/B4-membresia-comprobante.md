@@ -15,12 +15,14 @@ dev
 
 | Rol | Pantalla | Qué hace |
 |-----|----------|----------|
-| Alumno | `/alumno` · **Mi membresía** | Estado de la cuota, vencimiento y días restantes. Aviso 3 días antes y cuando venció, con acceso a "Pagá por transferencia" |
-| Alumno | `/alumno` · **Pagar por transferencia** | Alias, CBU, titular y monto con botón **Copiar**. Subir foto o PDF del comprobante y el monto transferido |
-| Alumno | `/alumno` · **Mis comprobantes** | Historial: En revisión, Aprobado o Rechazado con el motivo. **Ver** abre el archivo |
+| Alumno | `/alumno` · **Inicio** | Tarjeta de la cuota: días que faltan (o "Vencida"), fecha y barra de avance, con el color del estado. Debajo, el estado del último comprobante (si hay) y la lista *Pagos* |
+| Alumno | `/alumno/pagar` · **Pagar por transferencia** (pantalla aparte) | Monto, alias y CBU con **Copiar**, y subir foto o PDF. Al enviar: "¡Comprobante enviado!". Si ya hay uno en revisión, lo dice y no deja enviar otro |
+| Alumno | `/alumno/comprobantes` · **Mis comprobantes** (pantalla aparte) | Historial: En revisión, Aprobado o Rechazado con el motivo. Tocar uno abre el archivo |
 | SuperAdmin | `/admin/datos-cobro` · **Datos de cobro** | Carga y cambia alias, CBU/CVU, titular, banco y CUIT. Muestra cómo lo ve el alumno |
 
-![Alumno: pagar, en revisión y rechazado](img/b4-alumno.png)
+La app del alumno tiene forma de app de celular: **pestañas abajo** (Inicio · Rutina), barra superior con el avatar (nombre y *Cerrar sesión*) y las pantallas de pago se abren aparte con **‹** para volver. Quien no paga por transferencia no ve los datos bancarios en el inicio.
+
+![Inicio, pagar, enviado y mis comprobantes](img/b4-alumno.png)
 
 ![Datos de cobro del dueño](img/b4-datos-cobro.png)
 
@@ -29,13 +31,13 @@ dev
 - **Actor:** Alumno.
 - **Precondición:** sesión iniciada en la PWA.
 - **Flujo principal:**
-  1. El alumno entra a *Mi membresía*.
-  2. Ve el estado de su cuota y, en *Pagar por transferencia*, el alias, el CBU y el monto de la cuota vigente.
+  1. El alumno entra a la app y ve el estado de su cuota en *Inicio*.
+  2. Toca *Pagar por transferencia*: se abre la pantalla con el monto de la cuota, el alias y el CBU.
   3. Copia el alias o el CBU y transfiere desde la app de su banco.
   4. Toca *Elegir foto o PDF* y selecciona la captura o el PDF; ve una miniatura.
   5. Confirma el monto transferido (viene cargado con el valor de la cuota) y toca *Enviar comprobante*.
   6. El sistema guarda el archivo en el bucket privado y registra el comprobante en estado **Pendiente**.
-  7. El alumno ve *"Tu comprobante está en revisión"*.
+  7. El alumno ve *"¡Comprobante enviado!"* y, en Inicio, *"Tu comprobante está en revisión"*.
 - **Flujos alternativos:**
   - **A · Archivo inválido:** otro formato o más de 5 MB → el sistema indica el problema y no lo envía.
   - **B · Ya hay uno en revisión:** no se muestra el formulario hasta que recepción lo revise (y la base lo impide aunque se intente).
