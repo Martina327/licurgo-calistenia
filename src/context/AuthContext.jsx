@@ -53,8 +53,11 @@ export function AuthProvider({ children }) {
     return () => { cancelado = true }
   }, [userId])
 
-  const iniciarSesion = async (dni, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email: dniAEmail(dni), password })
+  // Alumnos entran con DNI; el personal, con su email (A6). Un solo campo para los dos.
+  const iniciarSesion = async (identificador, password) => {
+    const id = String(identificador).trim()
+    const email = id.includes('@') ? id.toLowerCase() : dniAEmail(id.replace(/[.\s]/g, ''))
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
     return { error }
   }
 

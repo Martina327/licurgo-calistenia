@@ -3,10 +3,10 @@ import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { esDniValido, INICIO_POR_ROL } from '../lib/utils'
 
-// CU02 – Autenticarse con DNI y contraseña
+// CU02 – Autenticarse: alumnos con DNI, personal con email (A6)
 export default function Login() {
   const { perfil, cargando, iniciarSesion } = useAuth()
-  const [dni, setDni] = useState('')
+  const [usuario, setUsuario] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -17,18 +17,20 @@ export default function Login() {
   const enviar = async (e) => {
     e.preventDefault()
     setError('')
-    if (!esDniValido(dni)) {
-      setError('Ingresá un DNI válido (7 u 8 números, sin puntos).')
+    const valor = usuario.trim()
+    const esEmail = valor.includes('@')
+    if (esEmail ? !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(valor) : !esDniValido(valor.replace(/[.\s]/g, ''))) {
+      setError(esEmail ? 'Revisá el email.' : 'Ingresá tu DNI (7 u 8 números) o, si sos del personal, tu email.')
       return
     }
     setEnviando(true)
-    const { error } = await iniciarSesion(dni, password)
+    const { error } = await iniciarSesion(valor, password)
     setEnviando(false)
     if (error) {
       console.error('Error de login:', error)
       setError(
         error.message === 'Invalid login credentials'
-          ? 'DNI o contraseña incorrectos.'
+          ? `${esEmail ? 'Email' : 'DNI'} o contraseña incorrectos.`
           : `No se pudo iniciar sesión: ${error.message}`,
       )
     }
@@ -43,13 +45,13 @@ export default function Login() {
         </div>
 
         <label className="block">
-          <span className="text-sm text-neutral-300">DNI</span>
+          <span className="text-sm text-neutral-300">DNI o email</span>
           <input
-            inputMode="numeric"
             autoComplete="username"
-            value={dni}
-            onChange={(e) => setDni(e.target.value.replace(/\D/g, '').slice(0, 8))}
-            placeholder="Sin puntos"
+            autoCapitalize="none"
+            value={usuario}
+            onChange={(e) => setUsuario(e.target.value)}
+            placeholder="Alumnos: DNI · Personal: email"
             className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2.5 outline-none focus:border-neutral-400"
           />
         </label>
@@ -69,7 +71,7 @@ export default function Login() {
 
         <button
           type="submit"
-          disabled={enviando || !dni || !password}
+          disabled={enviando || !usuario.trim() || !password}
           className="w-full rounded-lg bg-white py-2.5 font-semibold text-neutral-950 disabled:opacity-40"
         >
           {enviando ? 'Ingresando…' : 'Ingresar'}

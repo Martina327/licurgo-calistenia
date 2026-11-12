@@ -195,7 +195,7 @@ function TurnoAbierto({ turno, alCerrar }) {
 // Cobrar cuota en efectivo (CU06)
 // ---------------------------------------------------------------
 const CAMPOS_COBRO =
-  'alumno_id, dni, nombre, apellido, telefono, email, precio_plan, fecha_vencimiento, estado_alumno, estado_membresia, datos_faltantes'
+  'alumno_id, dni, nombre, apellido, telefono, email, precio_plan, fecha_vencimiento, estado_alumno, estado_membresia, datos_faltantes, pase_libre'
 
 // Mismo cálculo que _extender_membresia: +30 días al vencimiento actual.
 // Si nunca pagó o está inactivo (vencido hace más de 30 días), los 30 días cuentan desde hoy.
@@ -292,7 +292,7 @@ function CobrarCuota({ esDueno = false }) {
                     <p className="text-xs text-neutral-400">DNI {a.dni} · {a.estado_alumno}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <EtiquetaCuota estado={a.estado_membresia} />
+                    <EtiquetaCuota estado={a.pase_libre ? 'Pase libre' : a.estado_membresia} />
                     <button onClick={() => elegir(a)} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-950">
                       Cobrar
                     </button>
@@ -358,7 +358,18 @@ function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar, esDueno 
         </div>
       </div>
 
-      {faltaFicha ? (
+      {alumno.pase_libre ? (
+        <div className="space-y-3">
+          <p className="rounded-lg border border-sky-900 bg-sky-950/40 px-3 py-2 text-sm text-sky-200">
+            Tiene pase libre: no paga cuota. Si tiene que volver a pagar, el dueño le saca el pase libre desde Alumnos.
+          </p>
+          <div className="flex justify-end">
+            <button onClick={alCancelar} className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800">
+              Volver
+            </button>
+          </div>
+        </div>
+      ) : faltaFicha ? (
         <CompletarFicha alumno={alumno} alGuardar={alCompletarFicha} alCancelar={alCancelar} />
       ) : (
         <>

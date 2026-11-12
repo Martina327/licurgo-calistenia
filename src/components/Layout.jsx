@@ -11,6 +11,7 @@ const MENU = {
     { to: '/admin', texto: 'Ingresos', end: true },
     { to: '/admin/productos', texto: 'Productos' },
     { to: '/admin/salones', texto: 'Salones' },
+    { to: '/admin/personal', texto: 'Personal' },
     { to: '/admin/concurrencia', texto: 'Concurrencia' },
     { to: '/recepcion', texto: 'Mostrador', end: true },
     { to: '/recepcion/alumnos', texto: 'Alumnos' },

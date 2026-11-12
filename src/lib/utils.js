@@ -84,6 +84,10 @@ const MENSAJES = {
   MODALIDAD_INVALIDA: 'Elegí si es por hora o mensual.',
   MONTO_CONTADO_INVALIDO: 'Ingresá el efectivo que contaste (0 o más).',
   NO_SE_PUEDE_JUSTIFICAR: 'Ese cierre ya tiene una justificación o no tiene diferencia.',
+  PERSONAL_INEXISTENTE: 'Esa persona no es parte del personal editable.',
+  ROL_INVALIDO: 'Elegí Recepcionista o Coach.',
+  MOTIVO_PASE_REQUERIDO: 'Escribí el motivo del pase libre (ej.: profe, pareja del profe).',
+  SIN_PASE_LIBRE: 'Ese alumno no tiene pase libre.',
 }
 export const mensajeError = (error) => {
   if (!error) return ''

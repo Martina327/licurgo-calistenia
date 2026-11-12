@@ -25,7 +25,7 @@ export default function CambiarClave() {
     e.preventDefault()
     setError('')
     if (nueva.length < MINIMO) return setError(`La clave tiene que tener al menos ${MINIMO} caracteres.`)
-    if (nueva === perfil.dni) return setError('La clave nueva no puede ser tu DNI.')
+    if (perfil.dni && nueva === perfil.dni) return setError('La clave nueva no puede ser tu DNI.')
     if (nueva !== repetida) return setError('Las dos claves no coinciden.')
 
     setEnviando(true)
@@ -55,14 +55,14 @@ export default function CambiarClave() {
         <div className="space-y-1">
           <h2 className="text-lg font-semibold">Hola, {perfil.nombre}</h2>
           <p className="text-sm text-neutral-400">
-            Es tu primer ingreso. Elegí una clave nueva para reemplazar la inicial (tu DNI).
+            {perfil.rol === 'Alumno' ? 'Es tu primer ingreso. Elegí una clave nueva para reemplazar la inicial (tu DNI).' : 'Elegí una clave nueva para reemplazar la provisoria que te pasaron.'}
           </p>
         </div>
 
         <label className="block space-y-1">
           <span className="text-sm text-neutral-300">Clave nueva</span>
           <input type="password" autoComplete="new-password" value={nueva} onChange={(e) => setNueva(e.target.value)} className={campo} autoFocus />
-          <span className="text-xs text-neutral-500">Mínimo {MINIMO} caracteres. No puede ser tu DNI.</span>
+          <span className="text-xs text-neutral-500">Mínimo {MINIMO} caracteres.{perfil.rol === 'Alumno' ? ' No puede ser tu DNI.' : ''}</span>
         </label>
 
         <label className="block space-y-1">

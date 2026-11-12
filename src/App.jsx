@@ -10,6 +10,7 @@ import CambiarClave from './pages/CambiarClave'
 import DashboardIngresos from './pages/superadmin/DashboardIngresos'
 import Productos from './pages/superadmin/Productos'
 import Salones from './pages/superadmin/Salones'
+import Personal from './pages/superadmin/Personal'
 import DatosCobro from './pages/superadmin/DatosCobro'
 import Concurrencia from './pages/superadmin/Concurrencia'
 import Mostrador from './pages/recepcion/Mostrador'
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/admin" element={<DashboardIngresos />} />
             <Route path="/admin/productos" element={<Productos />} />
             <Route path="/admin/salones" element={<Salones />} />
+            <Route path="/admin/personal" element={<Personal />} />
             <Route path="/admin/datos-cobro" element={<DatosCobro />} />
             <Route path="/admin/concurrencia" element={<Concurrencia />} />
           </Route>
