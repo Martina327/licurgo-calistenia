@@ -88,6 +88,7 @@ const MENSAJES = {
   ROL_INVALIDO: 'Elegí Recepcionista o Coach.',
   MOTIVO_PASE_REQUERIDO: 'Escribí el motivo del pase libre (ej.: profe, pareja del profe).',
   SIN_PASE_LIBRE: 'Ese alumno no tiene pase libre.',
+  CIERRE_YA_REVISADO: 'Ese cierre ya estaba revisado.',
 }
 export const mensajeError = (error) => {
   if (!error) return ''

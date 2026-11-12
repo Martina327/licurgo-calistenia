@@ -1,7 +1,7 @@
 -- =====================================================================
 --  A6 · Personal y Pase Libre (CU15, RF12, RNF05) · Pareja A
 --
---  Correr en el SQL Editor de Supabase DESPUÉS de 20261111_03.
+--  Correr en el SQL Editor de Supabase DESPUÉS de 20261112_02.
 --  Es re-ejecutable.
 --
 --  Decisiones (12/11/2026):

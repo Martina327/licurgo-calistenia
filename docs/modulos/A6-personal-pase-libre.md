@@ -35,7 +35,7 @@ feature/a5-cierre-turno
 |-----------|-----------|
 | `20261112_01_a6_personal_pase_libre.sql` | `usuarios.dni` opcional para el staff; `alta_personal`, `editar_personal`, `cambiar_estado_personal`, `restablecer_clave_personal`, `v_personal`; columnas de pase libre en `alumnos`, `pase_libre_historial`, `asignar_pase_libre`, `quitar_pase_libre`; `v_membresias` con `pase_libre` y `pase_libre_motivo` al final; `v_alertas` sin pase libre |
 
-También incorporada en `supabase/schema.sql` (sección 19.19).
+También incorporada en `supabase/schema.sql` (sección 19.20).
 
 ### Para la Pareja B
 

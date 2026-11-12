@@ -18,9 +18,10 @@ import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 //   A4 · Subalquiler (CU16): salón, modalidad (por hora o mensual), quién alquila y medio
 //        de pago. El monto lo calcula la base con el precio vigente del salón (no se edita).
 //   A5 · Cierre del turno (CU05): arqueo ciego. La recepcionista cuenta el efectivo y lo
-//        carga SIN ver cuánto debería haber. Recién al cerrar, el sistema calcula el esperado
-//        (inicial + efectivo cobrado en el turno) y muestra la diferencia. Si hay diferencia,
-//        pide justificarla (justificar_cierre, una sola vez). El turno cerrado no se edita.
+//        carga SIN ver cuánto debería haber. Al cerrar ve SOLO si cierra justo, sobra o falta
+//        y cuánto (opción B, 12/11/2026): no ve lo cobrado ni el esperado. Si hay diferencia,
+//        pide justificarla (justificar_cierre, una sola vez) y el dueño la ve como aviso en
+//        Ingresos hasta marcarla revisada. El turno cerrado no se edita.
 //   Caja solo de RECEPCIONISTAS (turno, kiosco, arqueo). El DUEÑO entra a "Cobros": sin turno,
 //        anota cuotas (efectivo o transferencia) y subalquileres que le pagan directo a él.
 //        Su efectivo queda registrado sin turno y no altera el cierre de nadie (migración 20261111_03).
@@ -1031,13 +1032,6 @@ function ResultadoCierre({ resultado, alTerminar }) {
         ? { titulo: `Sobran ${formatearPesos(diferencia)}`, clase: 'border-amber-900 bg-amber-950/40 text-amber-200' }
         : { titulo: `Faltan ${formatearPesos(-diferencia)}`, clase: 'border-red-900 bg-red-950/40 text-red-200' }
 
-  const fila = (etiqueta, valor, fuerte) => (
-    <div className="flex justify-between">
-      <dt className="text-neutral-400">{etiqueta}</dt>
-      <dd className={`tabular-nums ${fuerte ? 'font-semibold' : ''}`}>{formatearPesos(valor)}</dd>
-    </div>
-  )
-
   return (
     <div className="max-w-md space-y-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
       <div>
@@ -1045,19 +1039,12 @@ function ResultadoCierre({ resultado, alTerminar }) {
         <p className="text-sm text-neutral-400">El cierre quedó registrado y no se puede modificar.</p>
       </div>
 
-      <dl className="space-y-1 text-sm">
-        {fila('Efectivo inicial', resultado.monto_inicial)}
-        {fila('Cobrado en efectivo', resultado.efectivo_cobrado)}
-        {fila('Debería haber', resultado.monto_esperado, true)}
-        {fila('Contaste', resultado.monto_contado, true)}
-      </dl>
-
       <div className={`rounded-lg border px-3 py-2 font-medium ${estado.clase}`}>{estado.titulo}</div>
 
       {diferencia !== 0 && !justificado && (
         <form onSubmit={justificar} className="space-y-2">
           <label className="block space-y-1 text-sm">
-            <span className="text-neutral-300">¿Por qué hay diferencia? Lo ve el dueño.</span>
+            <span className="text-neutral-300">¿Por qué puede haber diferencia? El dueño recibe un aviso con tu explicación.</span>
             <textarea
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
