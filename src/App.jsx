@@ -62,6 +62,7 @@ export default function App() {
           <Route element={<RutaProtegida roles={['Alumno']} />}>
             <Route path="/alumno" element={<InicioAlumno />} />
             <Route path="/alumno/rutina" element={<MiRutina />} />
+            <Route path="/alumno/rutina/dia/:numero" element={<MiRutina />} />
             <Route path="/alumno/mensualidad" element={<Mensualidad />} />
             <Route path="/alumno/pagar" element={<PagarCuota />} />
             <Route path="/alumno/comprobantes" element={<MisComprobantes />} />

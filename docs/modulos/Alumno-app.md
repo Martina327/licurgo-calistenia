@@ -7,7 +7,7 @@ Tres pestañas abajo, como una app de celular:
 | Pestaña | Ruta | Qué tiene |
 |---|---|---|
 | **Inicio** | `/alumno` | Foto de Licurgo con la frase del día, racha, "Hoy te toca", calendario del mes, últimas 8 semanas y contacto con Gero |
-| **Rutina** | `/alumno/rutina` | El checklist del día, con dos vistas |
+| **Rutina** | `/alumno/rutina` | La lista de días; cada día se abre en su propia pantalla con el checklist |
 | **Mensualidad** | `/alumno/mensualidad` | Estado de la cuota, pagar por transferencia, mis comprobantes, apto médico (B4) |
 
 ![Inicio y Mensualidad](img/alumno-inicio.png)
@@ -25,14 +25,13 @@ Tres pestañas abajo, como una app de celular:
 - **Cuota:** si vence en 3 días o venció, un aviso lleva a Mensualidad.
 - **Contacto:** foto de Gero, "Escribile a Gero" → WhatsApp (número de *Datos de cobro*, hoy 381 624-5748).
 
-## Rutina: dos vistas
+## Rutina: lista de días y pantalla del día
 
-Botón arriba a la derecha (se recuerda en el celular):
+- **`/alumno/rutina`**: los días de la rutina uno debajo del otro, con cuántas tareas tienen y su estado: *hoy te toca* (con la etiqueta **Hoy**), *en curso 3/6* o *✓ hecho esta semana*. Sin checklist en esta pantalla, para no sobrecargarla.
+- **`/alumno/rutina/dia/:numero`**: tocar un día abre su pantalla aparte (con "‹" para volver, igual que en Mensualidad). Tiene la barra de progreso fija arriba, las secciones con sus tildes y, al terminar, *"¡Día completo!"* con un botón para volver.
+- Abrir un día lo vuelve el día del checklist de hoy. El botón **Entrenar** del Inicio abre directamente el día que toca.
 
-- **Por días:** los días en horizontal arriba; se elige uno y se ve su rutina (como hasta ahora).
-- **Lista:** los días uno debajo del otro con cuántas tareas tienen y si ya se hicieron esta semana o si "hoy te toca". Tocar un día lo **despliega** (pasa a ser el día del checklist, con su barra de progreso fija arriba) y tocarlo de nuevo lo **minimiza**.
-
-![Vistas de la rutina](img/alumno-rutina-vistas.png)
+![Lista de días y pantalla del día](img/alumno-rutina-vistas.png)
 
 ## Marca
 
@@ -41,4 +40,4 @@ Logo Λ de Licurgo (rojo sobre negro) en los íconos de la app, el encabezado y 
 ## Pruebas
 
 - **Unitarias** (`lib/racha.js`): meta, unión de fuentes sin repetir, semanas lunes a domingo, racha (semana actual a medias no corta, sí suma cuando se cumple, se corta con una semana incompleta), semana en curso, calendario (mes que empieza en domingo, febrero), mensajes, frase estable en el día.
-- **Navegador:** Inicio con historial de 8 semanas (racha 5, 2/3 esta semana), aviso de cuota, contacto; vistas de rutina: cambio, desplegar/minimizar, tildar en la lista, la vista se recuerda al recargar y el día a medias se vuelve a abrir.
+- **Navegador:** Inicio con historial de 8 semanas (racha 5, 2/3 esta semana), aviso de cuota, contacto; rutina: lista de días, pantalla del día con "‹" a la rutina, completar un día ("¡Día completo!" y ✓ en la lista), día a medias "en curso 1/6".
