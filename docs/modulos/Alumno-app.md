@@ -43,3 +43,9 @@ Logo Λ de Licurgo (rojo sobre negro) en los íconos de la app, el encabezado y 
 
 - **Unitarias** (`lib/racha.js`): meta, unión de fuentes sin repetir, semanas lunes a domingo, racha (semana actual a medias no corta, sí suma cuando se cumple, se corta con una semana incompleta), semana en curso, calendario (mes que empieza en domingo, febrero), mensajes, frase estable en el día.
 - **Navegador:** Inicio con historial de 8 semanas (racha 5, 2/3 esta semana), aviso de cuota, contacto; rutina: lista de días, pantalla del día con "‹" a la rutina, completar un día ("¡Día completo!" y ✓ en la lista), día a medias "en curso 1/6".
+
+## Un día de rutina por fecha (12/11)
+
+- Antes se podían completar varios días de la rutina el mismo día (ej.: Día 2, 3 y 4 el miércoles). Así *Rutina* mostraba 5 de 5 días hechos e *Inicio* mostraba 2 días entrenados: una pantalla contaba días de la rutina y la otra días del calendario.
+- Ahora se cuenta **un día de la rutina por fecha** (índice único `uq_un_dia_por_fecha`, migración `20261112_04`). Cuando ya completó (o finalizó) un día, los demás se pueden mirar pero no tildar hasta mañana, y la lista avisa: *Hoy ya entrenaste: mañana seguís con el próximo*.
+- Las dos pantallas quedan siempre de acuerdo: días de la rutina hechos en la semana = días entrenados en la semana.
