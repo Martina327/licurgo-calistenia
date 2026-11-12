@@ -4,6 +4,7 @@ import { INICIO_POR_ROL } from './lib/utils'
 import RutaProtegida from './components/RutaProtegida'
 import Layout from './components/Layout'
 import Cargando from './components/Cargando'
+import ActualizacionApp from './components/ActualizacionApp'
 import Login from './pages/Login'
 import CambiarClave from './pages/CambiarClave'
 import DashboardIngresos from './pages/superadmin/DashboardIngresos'
@@ -28,6 +29,8 @@ function Inicio() {
 
 export default function App() {
   return (
+    <>
+    <ActualizacionApp />
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/cambiar-clave" element={<CambiarClave />} />
@@ -60,5 +63,6 @@ export default function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   )
 }
