@@ -29,6 +29,8 @@ Tres pestañas abajo, como una app de celular:
 
 - **`/alumno/rutina`**: los días de la rutina uno debajo del otro, con cuántas tareas tienen y su estado: *hoy te toca* (con la etiqueta **Hoy**), *en curso 3/6* o *✓ hecho esta semana*. Sin checklist en esta pantalla, para no sobrecargarla.
 - **`/alumno/rutina/dia/:numero`**: tocar un día abre su pantalla aparte (con "‹" para volver, igual que en Mensualidad). Tiene la barra de progreso fija arriba, las secciones con sus tildes y, al terminar, *"¡Día completo!"* con un botón para volver.
+- **Finalizar entrenamiento:** si tildó algo pero se tiene que ir, el botón pide confirmar ("¿Finalizar con 3 de 6?") y el día queda registrado en la semana; la próxima vez sigue con el día siguiente.
+- **No quedar trabado:** si un día quedó a medias y no se finalizó, al día siguiente igual se pasa al próximo día de la rutina (sin marcarlo como hecho).
 - Abrir un día lo vuelve el día del checklist de hoy. El botón **Entrenar** del Inicio abre directamente el día que toca.
 
 ![Lista de días y pantalla del día](img/alumno-rutina-vistas.png)

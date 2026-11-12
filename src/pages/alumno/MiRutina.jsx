@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
 import { TEXTO_VAMOS, agruparPorDia, nombreCadena, tareasDelDia, textoDescanso } from '../../lib/rutinas'
-import { alternarMarca, guardarChecklist, leerChecklist, sinMarcas } from '../../lib/checklist'
+import { alternarMarca, diaEmpezadoAntes, guardarChecklist, leerChecklist, sinMarcas } from '../../lib/checklist'
 import { completadosEnSemana, diaQueToca, lunesDe } from '../../lib/semana'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
@@ -24,6 +24,8 @@ import { CADENA, estiloSeccion as estilo } from '../../lib/secciones'
 // Las observaciones privadas del coach (lesiones, etc.) NO se muestran: son otra tabla.
 export default function MiRutina() {
   const { numero } = useParams()
+  const navegar = useNavigate()
+  const [confirmarFin, setConfirmarFin] = useState(false)
   const diaUrl = numero ? Number(numero) : null      // null = lista de días
   const [filas, setFilas] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -50,6 +52,7 @@ export default function MiRutina() {
           // Un día que quedó completo arranca sin tildes la próxima vez que se entra.
           // Si un día está a medio hacer (recargó en pleno entrenamiento), se conserva y se vuelve a abrir.
           const diasRutina = agruparPorDia(data)
+          const empezado = diaEmpezadoAntes(data[0].rutina_id, hoy) // a medias de otro día: no traba
           const guardado = leerChecklist(data[0].rutina_id, hoy)
           const tareasDe = (d) => tareasDelDia(d.items).map((t) => t.id)
           const completos = diasRutina.filter((d) => tareasDe(d).every((id) => guardado.marcados.includes(id)))
@@ -61,7 +64,7 @@ export default function MiRutina() {
           setCompletados(comp)
           const inicial = aMedias
             ? elegido.numero
-            : diaQueToca({ dias: diasRutina.map((d) => d.numero), completados: comp, hoy, elegidoHoy: guardado.dia })
+            : diaQueToca({ dias: diasRutina.map((d) => d.numero), completados: empezado ? [...comp, empezado] : comp, hoy, elegidoHoy: guardado.dia })
           diaVistaInicial.current = inicial
           setDiaVista(inicial)
         }
@@ -80,14 +83,17 @@ export default function MiRutina() {
 
   // Día completo → queda hecho en la semana. Se revisa siempre (no solo al tildar), así no se pierde
   // si el pedido falló o si las marcas ya estaban.
-  useEffect(() => {
-    if (!rutina || !diaActual || !completo || registradoHoy(diaActual.numero)) return
-    const n = diaActual.numero
+  const registrar = (n) => {
+    if (registradoHoy(n)) return
     setCompletados((cs) => [...cs, { numero_dia: n, fecha: hoy, creado: new Date().toISOString() }])
     cola.current = cola.current.then(async () => {
       const { error } = await supabase.from('dias_completados').insert({ rutina_id: rutina.rutina_id, numero_dia: n })
       if (error && error.code !== '23505') setError(mensajeError(error))
     })
+  }
+  useEffect(() => {
+    if (!rutina || !diaActual || !completo) return
+    registrar(diaActual.numero)
   }, [completo, diaActual?.numero]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Si destilda algo de un día que se registró hoy, se borra el registro de hoy
@@ -113,6 +119,13 @@ export default function MiRutina() {
     const quitando = check.marcados.includes(id)
     actualizar(alternarMarca({ ...check, fecha: hoyAR(), dia: diaActual.numero }, id))
     if (quitando) desregistrar(diaActual.numero)
+  }
+  // Finalizar a medias (se tiene que ir): el día queda hecho en la semana y mañana sigue el próximo
+  const finalizar = () => {
+    registrar(diaActual.numero)
+    actualizar({ ...check, fecha: hoyAR(), dia: null, marcados: check.marcados.filter((id) => !tareas.some((t) => t.id === id)) })
+    setConfirmarFin(false)
+    navegar('/alumno/rutina')
   }
   const reiniciar = () => {
     actualizar({ ...check, fecha: hoyAR(), dia: diaActual.numero, marcados: check.marcados.filter((id) => !tareas.some((t) => t.id === id)) })
@@ -149,6 +162,25 @@ export default function MiRutina() {
           {yaHechoEstaSemana && <p className="text-xs text-neutral-400">✓ Este día ya lo hiciste esta semana.</p>}
         </div>
         <ContenidoDia tareas={tareas} bloques={bloques} hecha={hecha} marcar={marcar} />
+        {!completo && hechos > 0 && !hechosSemana.has(diaActual.numero) && (
+          <div className="mt-6">
+            {confirmarFin ? (
+              <div className="space-y-3 rounded-2xl border border-neutral-700 bg-neutral-900 p-4">
+                <p className="font-semibold">¿Finalizar con {hechos} de {tareas.length}?</p>
+                <p className="text-sm text-neutral-400">El día queda registrado en tu semana y la próxima vez seguís con el día siguiente.</p>
+                <div className="flex gap-2">
+                  <button onClick={finalizar} className="flex-1 rounded-xl bg-white py-3 font-semibold text-neutral-950">Finalizar</button>
+                  <button onClick={() => setConfirmarFin(false)} className="flex-1 rounded-xl bg-neutral-800 py-3 font-semibold">Seguir entrenando</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmarFin(true)}
+                className="w-full rounded-xl border border-neutral-700 py-3 font-semibold text-neutral-200 active:bg-neutral-800">
+                Finalizar entrenamiento
+              </button>
+            )}
+          </div>
+        )}
         {completo && (
           <div className="mt-6 space-y-3 rounded-2xl bg-emerald-500/10 p-4 text-center">
             <p className="text-lg font-bold text-emerald-200">¡Día completo! 💪</p>
