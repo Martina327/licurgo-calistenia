@@ -186,10 +186,10 @@ function Invitaciones({ invitaciones, alRegistrar }) {
   return (
     <section className="space-y-3">
       <div>
-        <h2 className="text-lg font-semibold">Invitaciones a retomar</h2>
-        <p className="text-sm text-neutral-400">
-          Personas que hicieron la clase de prueba hace 7 días o más sin pagar, y alumnos inactivos. Abrí WhatsApp, enviá el mensaje y marcalo como enviado.
-        </p>
+        <h2 className="flex items-center gap-1 text-lg font-semibold">
+          Invitaciones a retomar
+          <Ayuda texto="Personas que hicieron la clase de prueba hace 7 días o más sin pagar, y alumnos inactivos. Abrí WhatsApp, enviá el mensaje y marcalo como enviado." />
+        </h2>
       </div>
       {invitaciones.length === 0 ? (
         <p className="text-sm text-neutral-400">No hay invitaciones pendientes.</p>
@@ -228,15 +228,18 @@ function Invitaciones({ invitaciones, alRegistrar }) {
 // ---------------------------------------------------------------
 // Alertas de vencimiento (CU17)
 // ---------------------------------------------------------------
-function Alertas({ alertas }) {
+// Solo lo que vence o venció: cuotas (3 días o menos) y aptos médicos por vencer o vencidos.
+// Los alumnos que nunca cargaron el apto no son un vencimiento: van aparte, en una línea que se despliega.
+function Alertas({ alertas: todas }) {
+  const [verSinApto, setVerSinApto] = useState(false)
+  const alertas = todas.filter((a) => a.estado !== 'Sin certificado')
+  const sinApto = todas.filter((a) => a.estado === 'Sin certificado')
   return (
     <section className="space-y-3">
-      <div>
-        <h2 className="text-lg font-semibold">Alertas de vencimiento</h2>
-        <p className="text-sm text-neutral-400">
-          Membresías que vencen en 3 días o menos y certificados de aptitud por vencer, vencidos o faltantes.
-        </p>
-      </div>
+      <h2 className="flex items-center gap-1 text-lg font-semibold">
+        Alertas de vencimiento
+        <Ayuda texto="Cuotas que vencen en 3 días o menos o ya vencieron, y aptos médicos por vencer o vencidos." />
+      </h2>
 
       {alertas.length === 0 ? (
         <p className="text-sm text-neutral-400">No hay alertas.</p>
@@ -276,6 +279,28 @@ function Alertas({ alertas }) {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {sinApto.length > 0 && (
+        <div className="text-sm">
+          <button onClick={() => setVerSinApto((v) => !v)} className="text-neutral-400 hover:text-white">
+            {sinApto.length === 1 ? '1 alumno no tiene el apto médico cargado' : `${sinApto.length} alumnos no tienen el apto médico cargado`}
+            <span className="ml-1">{verSinApto ? '▾' : '▸'}</span>
+          </button>
+          {verSinApto && (
+            <ul className="mt-2 divide-y divide-neutral-800 rounded-xl border border-neutral-800">
+              {sinApto.map((a) => {
+                const wa = linkWhatsApp(a.telefono, MENSAJES_WHATSAPP.certificado(a.nombre))
+                return (
+                  <li key={a.alumno_id} className="flex items-center justify-between gap-3 px-3 py-2">
+                    <span>{a.nombre} {a.apellido}</span>
+                    {wa && <a href={wa} target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">WhatsApp</a>}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </div>
       )}
     </section>
