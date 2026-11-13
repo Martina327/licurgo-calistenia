@@ -8,7 +8,7 @@ import Ayuda from '../../components/Ayuda'
 import CampoFecha from '../../components/CampoFecha'
 import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 import { IconoBuscar } from '../../components/Iconos'
-import { AYUDA_STOCK, ayudaVencimiento, buscarProductos, COLOR_STOCK, estadoStock, estadoVencimiento } from '../../lib/kiosco'
+import { AYUDA_STOCK, ayudaVencimiento, buscarProductos, filtrarCategoria, FILTROS_CATEGORIA, COLOR_STOCK, estadoStock, estadoVencimiento } from '../../lib/kiosco'
 
 // Caja (Pareja A). Recepción y SuperAdmin.
 //   A2 · Abrir el turno de caja con el monto inicial (el cambio que hay en la caja).
@@ -536,11 +536,12 @@ function Kiosco() {
   const [error, setError] = useState('')
   const [ultimaVenta, setUltimaVenta] = useState(null)
   const [busqueda, setBusqueda] = useState('')
+  const [categoria, setCategoria] = useState('Todo')
 
   const cargar = useCallback(async () => {
     const { data, error } = await supabase
       .from('productos')
-      .select('id, nombre, precio, stock, vencimiento')
+      .select('id, nombre, precio, stock, vencimiento, categoria')
       .eq('activo', true)
       .order('nombre')
     if (error) setError(mensajeError(error))
@@ -606,7 +607,7 @@ function Kiosco() {
   if (cargando) return <Cargando />
 
   const hoy = hoyAR()
-  const visibles = buscarProductos(productos, busqueda)
+  const visibles = buscarProductos(filtrarCategoria(productos, categoria), busqueda)
   const unidades = items.reduce((t, i) => t + i.cantidad, 0)
 
   return (
@@ -641,6 +642,18 @@ function Kiosco() {
             {busqueda && (
               <button onClick={() => setBusqueda('')} className="text-sm text-neutral-500 hover:text-white" aria-label="Borrar búsqueda">✕</button>
             )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {FILTROS_CATEGORIA.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setCategoria(f.id)}
+                className={`rounded-full border px-3 py-1 text-sm ${categoria === f.id ? 'border-white bg-white text-neutral-950' : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'}`}
+              >
+                {f.texto}
+              </button>
+            ))}
           </div>
 
           {productos.length === 0 ? (

@@ -49,3 +49,16 @@ export function ayudaVencimiento(vencimiento, hoy) {
   const dias = diasEntre(hoy, vencimiento)
   return dias === 0 ? 'Vence hoy.' : dias === 1 ? 'Vence mañana.' : `Faltan ${dias} días para que venza.`
 }
+
+// Categorías (productos.categoria) y filtros de la venta
+export const CATEGORIAS = [
+  { id: 'Bebida', texto: 'Bebida' },
+  { id: 'Otro', texto: 'Otro producto' },
+]
+export const FILTROS_CATEGORIA = [
+  { id: 'Todo', texto: 'Todo' },
+  { id: 'Bebida', texto: 'Bebidas' },
+  { id: 'Otro', texto: 'Otros productos' },
+]
+export const filtrarCategoria = (productos, categoria) =>
+  categoria === 'Todo' ? productos : productos.filter((p) => (p.categoria ?? 'Otro') === categoria)

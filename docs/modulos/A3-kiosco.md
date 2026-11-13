@@ -13,8 +13,8 @@ feature/a2-cobro-cuota
 
 | Rol | Pantalla | Qué hace |
 |-----|----------|----------|
-| Recepción | `/recepcion/caja` → pestaña **Kiosco** | Buscador por nombre, productos en tarjetas (se tocan para sumarlos), panel **Venta actual** con − / +, total y medio de pago. En el celular, barra fija abajo con el total |
-| SuperAdmin | `/admin/productos` | Buscador por nombre; filtros a la venta / stock bajo / dados de baja; stock con − / + y casilla editable; lápiz para editar nombre, precio y vencimiento; basurero para dar de baja; reactivación |
+| Recepción | `/recepcion/caja` → pestaña **Kiosco** | Buscador por nombre, filtro **Todo · Bebidas · Otros productos**, productos en tarjetas (se tocan para sumarlos), panel **Venta actual** con − / +, total y medio de pago. En el celular, barra fija abajo con el total |
+| SuperAdmin | `/admin/productos` | Buscador por nombre; filtros a la venta / stock bajo / dados de baja; stock con − / + y casilla editable; lápiz para editar nombre, precio, tipo (Bebida u Otro producto) y vencimiento; basurero para dar de baja; reactivación |
 
 ## Reglas
 
@@ -33,5 +33,6 @@ feature/a2-cobro-cuota
 |-----------|-----------|
 | `20261111_01_a3_cargar_stock.sql` | `cargar_stock(producto, cantidad)`, solo SuperAdmin |
 | `20261112_04_kiosco_vencimiento_stock.sql` | `productos.vencimiento` (opcional) y `ajustar_stock(producto, delta)`, solo SuperAdmin |
+| `20261112_05_kiosco_categoria.sql` | `productos.categoria` ('Bebida' u 'Otro'); la primera vez adivina las bebidas por el nombre |
 
-También incorporadas en `supabase/schema.sql` (secciones 19.16 y 19.22). `registrar_venta` y la tabla `productos` ya existían.
+También incorporadas en `supabase/schema.sql` (secciones 19.16, 19.22 y 19.23). `registrar_venta` y la tabla `productos` ya existían.

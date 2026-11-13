@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, formatearPesos, hoyAR, mensajeError } from '../../lib/utils'
-import { AYUDA_STOCK, ayudaVencimiento, buscarProductos, COLOR_STOCK, COLOR_VENCIMIENTO, estadoStock, estadoVencimiento } from '../../lib/kiosco'
+import { AYUDA_STOCK, ayudaVencimiento, buscarProductos, CATEGORIAS, COLOR_STOCK, COLOR_VENCIMIENTO, estadoStock, estadoVencimiento } from '../../lib/kiosco'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import Ayuda from '../../components/Ayuda'
@@ -43,7 +43,7 @@ export default function Productos() {
   const [busqueda, setBusqueda] = useState('')
 
   const cargar = useCallback(async () => {
-    const { data, error } = await supabase.from('productos').select('id, nombre, precio, stock, vencimiento, activo').order('nombre')
+    const { data, error } = await supabase.from('productos').select('id, nombre, precio, stock, vencimiento, categoria, activo').order('nombre')
     setError(error ? mensajeError(error) : '')
     setProductos(data ?? [])
     setCargando(false)
@@ -351,6 +351,7 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
     precio: producto ? String(producto.precio) : '',
     stock: '',
     vencimiento: producto?.vencimiento ?? '',
+    categoria: producto?.categoria ?? 'Otro',
   })
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -369,7 +370,7 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
     if (datos.vencimiento === null) return setError('Revisá la fecha de vencimiento (día/mes/año) o dejala vacía.')
 
     setEnviando(true)
-    const fila = { nombre, precio, vencimiento: datos.vencimiento || null, ...(esNuevo ? { stock } : {}) }
+    const fila = { nombre, precio, categoria: datos.categoria, vencimiento: datos.vencimiento || null, ...(esNuevo ? { stock } : {}) }
     const { error } = esNuevo
       ? await supabase.from('productos').insert(fila)
       : await supabase.from('productos').update(fila).eq('id', producto.id)
@@ -402,6 +403,21 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
             <input value={datos.stock} onChange={cambiar('stock')} inputMode="numeric" placeholder="0" className={campo} />
           </label>
         )}
+        <div className="space-y-1 text-sm">
+          <span className="block text-neutral-400">Tipo</span>
+          <div className="flex gap-2">
+            {CATEGORIAS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setDatos((d) => ({ ...d, categoria: c.id }))}
+                className={`flex-1 rounded-lg border px-3 py-2 ${datos.categoria === c.id ? 'border-white bg-white font-semibold text-neutral-950' : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'}`}
+              >
+                {c.texto}
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="space-y-1 text-sm">
           <span className="text-neutral-400">Vencimiento <span className="text-neutral-600">(opcional)</span></span>
           <CampoFecha value={datos.vencimiento} onChange={cambiar('vencimiento')} className={campo} />
