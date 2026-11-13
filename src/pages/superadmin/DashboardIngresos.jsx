@@ -9,6 +9,7 @@ import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import CampoFecha from '../../components/CampoFecha'
 import AvisoCierres from '../../components/AvisoCierres'
+import ResumenInicio from '../../components/ResumenInicio'
 
 // CU12 · Dashboard de ingresos (A7). SOLO SuperAdmin: v_movimientos, v_cierres_caja y
 // configuracion_admin no devuelven filas a otros roles (RNF01), y la ruta /admin es solo suya.
@@ -74,10 +75,11 @@ export default function DashboardIngresos() {
   return (
     <div className="space-y-5">
       <AvisoCierres />
+      <ResumenInicio />
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Ingresos</h1>
+          <h2 className="text-xl font-semibold">Ingresos</h2>
           <p className="text-sm text-neutral-400">
             {rango.desde === rango.hasta ? formatearFecha(rango.desde) : `Del ${formatearFecha(rango.desde)} al ${formatearFecha(rango.hasta)}`}
           </p>

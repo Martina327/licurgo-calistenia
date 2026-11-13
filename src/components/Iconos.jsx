@@ -57,3 +57,34 @@ export const IconoBuscar = (p) => (
 export const IconoCalendario = (p) => (
   <Base {...p}><rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M3.5 10h17M8 3v4M16 3v4" /></Base>
 )
+
+// Menú lateral del personal
+export const IconoMenu = (p) => <Base {...p}><path d="M4 6h16M4 12h16M4 18h16" /></Base>
+export const IconoCerrar = (p) => <Base {...p}><path d="M6 6l12 12M18 6 6 18" /></Base>
+export const IconoBolsa = (p) => (
+  <Base {...p}><path d="M5 8h14l-1 12H6z" /><path d="M9 8V6a3 3 0 0 1 6 0v2" /></Base>
+)
+export const IconoPuerta = (p) => (
+  <Base {...p}><path d="M5 21V4h11v17" /><path d="M3 21h18" /><path d="M13 12h.01" /></Base>
+)
+export const IconoPersonas = (p) => (
+  <Base {...p}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6.5 6.5 0 0 1 3.5 6" /></Base>
+)
+export const IconoGrafico = (p) => (
+  <Base {...p}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></Base>
+)
+export const IconoMostrador = (p) => (
+  <Base {...p}><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1" /><path d="m9 13 2 2 4-4" /></Base>
+)
+export const IconoAlumno = (p) => (
+  <Base {...p}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></Base>
+)
+export const IconoCaja = (p) => (
+  <Base {...p}><rect x="2.5" y="6" width="19" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 9.5v5M18 9.5v5" /></Base>
+)
+export const IconoCapas = (p) => (
+  <Base {...p}><path d="m12 3 9 5-9 5-9-5z" /><path d="m3 13 9 5 9-5" /></Base>
+)
+export const IconoLista = (p) => (
+  <Base {...p}><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" /></Base>
+)

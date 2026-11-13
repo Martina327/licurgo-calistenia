@@ -24,7 +24,11 @@ export default function Alumnos() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [busqueda, setBusqueda] = useState('')
-  const [filtro, setFiltro] = useState('Todos')
+  // ?filtro=Activo: llega desde las tarjetas del Inicio del dueño
+  const [filtro, setFiltro] = useState(() => {
+    const f = new URLSearchParams(window.location.search).get('filtro')
+    return FILTROS.includes(f) ? f : 'Todos'
+  })
   const [mostrarAlta, setMostrarAlta] = useState(false)
   const [editando, setEditando] = useState(null) // fila del alumno que se está editando
   const [avisoOk, setAvisoOk] = useState('')
