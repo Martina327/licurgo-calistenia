@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import Ayuda from '../../components/Ayuda'
+import { IconoBasurero, IconoLapiz, IconoLlave } from '../../components/Iconos'
 
 // Personal (CU15 · A6). SOLO SuperAdmin.
 //   · Alta de recepcionistas y coaches con su email real. El sistema genera una
@@ -74,11 +76,8 @@ export default function Personal() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Personal</h1>
-          <p className="text-sm text-neutral-400">Recepcionistas y coaches. Entran a la app con su email.</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Personal</h1>
         {!mostrarAlta && (
           <button onClick={() => { setMostrarAlta(true); setEditando(null); limpiar() }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950">
             + Personal
@@ -123,24 +122,50 @@ export default function Personal() {
                     </p>
                     <p className="text-sm text-neutral-400">
                       {p.email ?? 'Sin email'}{p.telefono ? ` · ${p.telefono}` : ''}
-                      {p.debe_cambiar_clave && <span className="text-amber-400"> · Todavía no cambió la clave provisoria</span>}
                     </p>
+                    {p.debe_cambiar_clave && (
+                      <Ayuda
+                        texto="Todavía no entró a cambiar la clave provisoria."
+                        className="mt-1 rounded-full border border-amber-800 px-2 py-0.5 text-[11px] font-medium text-amber-400 hover:bg-amber-950"
+                      >
+                        Clave provisoria
+                      </Ayuda>
+                    )}
                   </div>
                   {!esDueno && (
-                    <div className="flex flex-wrap gap-3 text-sm">
-                      {p.activo && (
+                    <div className="flex gap-1">
+                      {p.activo ? (
                         <>
-                          <button onClick={() => { setEditando(p.id); setMostrarAlta(false); limpiar() }} className="text-neutral-300 hover:underline">
-                            Editar
+                          <button
+                            onClick={() => { setEditando(editando === p.id ? null : p.id); setMostrarAlta(false); limpiar() }}
+                            aria-label={`Editar a ${p.nombre} ${p.apellido}`}
+                            title="Editar"
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-800 text-white hover:bg-neutral-800"
+                          >
+                            <IconoLapiz className="h-4 w-4" />
                           </button>
-                          <button onClick={() => nuevaClave(p)} className="text-neutral-300 hover:underline">
-                            Nueva clave
+                          <button
+                            onClick={() => nuevaClave(p)}
+                            aria-label={`Nueva clave para ${p.nombre} ${p.apellido}`}
+                            title="Nueva clave"
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-800 text-white hover:bg-neutral-800"
+                          >
+                            <IconoLlave className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => cambiarEstado(p)}
+                            aria-label={`Dar de baja a ${p.nombre} ${p.apellido}`}
+                            title="Dar de baja"
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-800 text-red-400 hover:bg-red-950"
+                          >
+                            <IconoBasurero className="h-4 w-4" />
                           </button>
                         </>
+                      ) : (
+                        <button onClick={() => cambiarEstado(p)} className="rounded-lg border border-emerald-800 px-3 py-1.5 text-sm text-emerald-300 hover:bg-emerald-950">
+                          Reactivar
+                        </button>
                       )}
-                      <button onClick={() => cambiarEstado(p)} className={p.activo ? 'text-red-400 hover:underline' : 'text-emerald-400 hover:underline'}>
-                        {p.activo ? 'Dar de baja' : 'Reactivar'}
-                      </button>
                     </div>
                   )}
                 </div>
