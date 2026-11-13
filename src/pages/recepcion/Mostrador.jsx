@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, hoyAR, linkWhatsApp, mensajeError, MENSAJES_WHATSAPP } from '../../lib/utils'
 import { buscarParaCheckin, faltaParaBuscar, horaAR, situacionCheckin, tienePaseLibre, TONOS } from '../../lib/checkin'
+import { Link } from 'react-router-dom'
 import Cargando from '../../components/Cargando'
+import Ayuda from '../../components/Ayuda'
+import { Chevron, IconoMostrador } from '../../components/Iconos'
 
 // Mostrador de recepción:
 //   · Check-in (CU03): la asistencia la marca SOLO recepción. La cuota vencida avisa, no bloquea.
@@ -53,7 +56,6 @@ function CheckIn({ alumnos }) {
   const [resultado, setResultado] = useState(null) // { alumno, situacion, hora } o { error }
   const [enCurso, setEnCurso] = useState(null)
   const [presentes, setPresentes] = useState([]) // [{ alumno_id, fecha_hora }] de hoy
-  const [verPresentes, setVerPresentes] = useState(false)
   const input = useRef(null)
 
   const cargarPresentes = useCallback(async () => {
@@ -64,7 +66,6 @@ function CheckIn({ alumnos }) {
   useEffect(() => { cargarPresentes() }, [cargarPresentes])
 
   const horaDe = useMemo(() => Object.fromEntries(presentes.map((p) => [p.alumno_id, p.fecha_hora])), [presentes])
-  const porId = useMemo(() => Object.fromEntries(alumnos.map((a) => [a.alumno_id, a])), [alumnos])
   const resultados = useMemo(() => buscarParaCheckin(alumnos, busqueda), [busqueda, alumnos])
 
   const marcarPresente = async (alumno) => {
@@ -86,16 +87,10 @@ function CheckIn({ alumnos }) {
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold">Asistencia</h1>
-          <p className="text-sm text-neutral-400">Buscá por DNI o nombre y marcá el presente. Una cuota vencida no impide entrar: solo avisa.</p>
-        </div>
-        <button onClick={() => setVerPresentes((v) => !v)}
-          className="rounded-full border border-neutral-700 px-3 py-1 text-sm text-neutral-300 hover:bg-neutral-900">
-          Presentes hoy <span className="font-semibold text-white">{presentes.length}</span> {verPresentes ? '▾' : '▸'}
-        </button>
-      </div>
+      <h1 className="flex items-center gap-1 text-xl font-semibold">
+        Asistencia
+        <Ayuda texto="Buscá por DNI o nombre y marcá el presente. Una cuota vencida no impide entrar: solo avisa." />
+      </h1>
 
       <input
         id="busqueda-checkin"
@@ -160,23 +155,17 @@ function CheckIn({ alumnos }) {
         </div>
       )}
 
-      {verPresentes && (
-        presentes.length === 0 ? (
-          <p className="px-1 text-sm text-neutral-500">Todavía no hay presentes hoy.</p>
-        ) : (
-          <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800 text-sm">
-            {presentes.map((p) => {
-              const a = porId[p.alumno_id]
-              return (
-                <li key={p.alumno_id} className="flex items-center justify-between gap-3 px-4 py-2">
-                  <span className="truncate">{a ? `${a.apellido}, ${a.nombre}` : 'Alumno dado de baja'}</span>
-                  <span className="shrink-0 tabular-nums text-neutral-400">{horaAR(p.fecha_hora)}</span>
-                </li>
-              )
-            })}
-          </ul>
-        )
-      )}
+      <Link
+        to="/recepcion/presentes"
+        className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/60 px-4 py-3 hover:border-neutral-600"
+      >
+        <span className="flex items-center gap-3">
+          <IconoMostrador className="h-5 w-5 text-emerald-400" />
+          <span className="font-medium">Presentes de hoy</span>
+          <span className="rounded-full bg-emerald-950 px-2 py-0.5 text-xs font-semibold text-emerald-300">{presentes.length}</span>
+        </span>
+        <Chevron className="h-4 w-4 text-neutral-500" />
+      </Link>
     </section>
   )
 }

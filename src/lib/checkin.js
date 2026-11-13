@@ -23,7 +23,8 @@ export function buscarParaCheckin(alumnos, consulta, limite = 6) {
   const q = normalizar(consulta)
   const digitos = soloDigitos(consulta)
   const esDni = esConsultaDni(consulta)
-  if (faltaParaBuscar(consulta)) return []
+  // Sin nada escrito no muestra a nadie: la lista aparece solo al buscar
+  if (!String(consulta ?? '').trim() || faltaParaBuscar(consulta)) return []
 
   const palabras = q.split(/\s+/).filter(Boolean)
   const puntaje = (a) => {

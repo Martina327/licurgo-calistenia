@@ -15,6 +15,7 @@ import Personal from './pages/superadmin/Personal'
 import DatosCobro from './pages/superadmin/DatosCobro'
 import Concurrencia from './pages/superadmin/Concurrencia'
 import Mostrador from './pages/recepcion/Mostrador'
+import Presentes from './pages/recepcion/Presentes'
 import Alumnos from './pages/recepcion/Alumnos'
 import Caja from './pages/recepcion/Caja'
 import Comprobantes from './pages/recepcion/Comprobantes'
@@ -60,6 +61,7 @@ export default function App() {
           </Route>
           <Route element={<RutaProtegida roles={['Recepcionista', 'SuperAdmin']} />}>
             <Route path="/recepcion" element={<Mostrador />} />
+            <Route path="/recepcion/presentes" element={<Presentes />} />
             <Route path="/recepcion/alumnos" element={<Alumnos />} />
             <Route path="/recepcion/caja" element={<Caja />} />
             <Route path="/recepcion/comprobantes" element={<Comprobantes />} />
