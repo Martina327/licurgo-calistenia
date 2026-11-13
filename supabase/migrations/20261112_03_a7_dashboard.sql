@@ -27,7 +27,9 @@ SELECT i.id,
        r.nombre || ' ' || r.apellido                                   AS cobrado_por,
        r.rol                                                           AS rol_cobro,
        a.nombre || ' ' || a.apellido                                   AS alumno,
-       i.turno_id IS NULL AND i.medio_pago = 'Efectivo'                AS fuera_de_caja
+       i.turno_id IS NULL AND i.medio_pago = 'Efectivo'                AS fuera_de_caja,
+       i.turno_id,                                    -- detalle del cierre de caja
+       i.registrado_por
   FROM public.ingresos i
   JOIN public.usuarios r      ON r.id = i.registrado_por
   LEFT JOIN public.usuarios a ON a.id = i.alumno_id

@@ -1,24 +1,24 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { formatearPesos, mensajeError } from '../lib/utils'
+import { formatearFechaHora, formatearPesos, mensajeError } from '../lib/utils'
+import { Chevron } from './Iconos'
 
 // Aviso al dueño (A5 · opción B): cierres de caja con diferencia que todavía no revisó.
-// Solo devuelve filas al SuperAdmin (v_cierres_caja). Al marcar revisado, deja de aparecer.
-const formatearFechaHora = (iso) =>
-  new Date(iso).toLocaleString('es-AR', {
-    timeZone: 'America/Argentina/Buenos_Aires',
-    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-  })
-
+//   · Cerrado: una franja corta "Revisar cierre de caja".
+//   · Al tocarla: cada cierre con sobra/falta y el monto, y "Ver detalle".
+//   · En el detalle (/admin/cierres/:id) está todo y se marca como revisado.
+// Solo devuelve filas al SuperAdmin (v_cierres_caja).
 export default function AvisoCierres() {
   const [cierres, setCierres] = useState([])
   const [abierto, setAbierto] = useState(false)
   const [error, setError] = useState('')
+  const ir = useNavigate()
 
   const cargar = useCallback(async () => {
     const { data, error } = await supabase
       .from('v_cierres_caja')
-      .select('id, recepcionista, cerrado_at, monto_inicial, efectivo_cobrado, monto_esperado, monto_contado, diferencia, comentario')
+      .select('id, recepcionista, cerrado_at, diferencia')
       .is('revisado_at', null)
       .neq('diferencia', 0)
       .order('cerrado_at', { ascending: false })
@@ -30,49 +30,41 @@ export default function AvisoCierres() {
     cargar()
   }, [cargar])
 
-  const revisar = async (id) => {
-    setError('')
-    const { error } = await supabase.rpc('marcar_cierre_revisado', { p_turno_id: id })
-    if (error) return setError(mensajeError(error))
-    await cargar()
-  }
-
   if (cierres.length === 0 && !error) return null
 
   return (
-    <div className="space-y-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-medium">
-          {cierres.length === 1 ? '1 cierre de caja con diferencia sin revisar' : `${cierres.length} cierres de caja con diferencia sin revisar`}
-        </p>
-        {cierres.length > 0 && (
-          <button onClick={() => setAbierto((a) => !a)} className="rounded-lg border border-amber-800 px-3 py-1 hover:bg-amber-900/40">
-            {abierto ? 'Ocultar' : 'Ver detalle'}
-          </button>
-        )}
-      </div>
-      {error && <p className="text-red-300">{error}</p>}
+    <div className="overflow-hidden rounded-xl border border-amber-900 bg-amber-950/40 text-sm text-amber-100">
+      <button
+        onClick={() => setAbierto((a) => !a)}
+        aria-expanded={abierto}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-amber-900/20"
+      >
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400" />
+        <span className="flex-1 font-medium">
+          {cierres.length === 1 ? 'Revisar cierre de caja' : `Revisar ${cierres.length} cierres de caja`}
+        </span>
+        <Chevron className={`h-4 w-4 transition-transform ${abierto ? 'rotate-90' : ''}`} />
+      </button>
+
+      {error && <p className="px-4 pb-3 text-red-300">{error}</p>}
+
       {abierto && (
-        <ul className="divide-y divide-amber-900/60">
+        <ul className="divide-y divide-amber-900/60 border-t border-amber-900/60">
           {cierres.map((c) => {
             const d = Number(c.diferencia)
             return (
-              <li key={c.id} className="flex flex-wrap items-start justify-between gap-3 py-2">
-                <div className="space-y-0.5">
-                  <p>
-                    <span className="font-medium">{c.recepcionista}</span> · {formatearFechaHora(c.cerrado_at)} ·{' '}
-                    <span className={d < 0 ? 'text-red-300' : 'text-amber-200'}>
-                      {d < 0 ? `Faltan ${formatearPesos(-d)}` : `Sobran ${formatearPesos(d)}`}
-                    </span>
+              <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+                <div>
+                  <p className={`font-semibold ${d < 0 ? 'text-red-300' : 'text-amber-200'}`}>
+                    {d < 0 ? `Faltan ${formatearPesos(-d)}` : `Sobran ${formatearPesos(d)}`}
                   </p>
-                  <p className="text-amber-200/70">
-                    Inicial {formatearPesos(c.monto_inicial)} · Cobrado en efectivo {formatearPesos(c.efectivo_cobrado)} ·
-                    Debía haber {formatearPesos(c.monto_esperado)} · Contó {formatearPesos(c.monto_contado)}
-                  </p>
-                  <p className="text-amber-200/90">{c.comentario ? `“${c.comentario}”` : 'Sin justificación'}</p>
+                  <p className="text-xs text-amber-200/70">{c.recepcionista} · {formatearFechaHora(c.cerrado_at)}</p>
                 </div>
-                <button onClick={() => revisar(c.id)} className="rounded-lg bg-white px-3 py-1 font-semibold text-neutral-950">
-                  Marcar revisado
+                <button
+                  onClick={() => ir(`/admin/cierres/${c.id}`)}
+                  className="rounded-lg border border-amber-800 px-3 py-1.5 hover:bg-amber-900/40"
+                >
+                  Ver detalle
                 </button>
               </li>
             )

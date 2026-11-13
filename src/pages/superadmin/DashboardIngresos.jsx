@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, formatearPesos, hoyAR, mensajeError } from '../../lib/utils'
 import {
@@ -314,6 +315,7 @@ function Cierres({ desde, hasta }) {
             <th className="px-3 py-2 text-right">Contó</th>
             <th className="px-3 py-2 text-right">Diferencia</th>
             <th className="px-3 py-2">Justificación</th>
+            <th className="px-3 py-2" />
           </tr>
         </thead>
         <tbody>
@@ -331,6 +333,9 @@ function Cierres({ desde, hasta }) {
                 <td className="px-3 py-2 text-neutral-300">
                   {c.comentario ?? '—'}
                   {d !== 0 && !c.revisado_at && <span className="ml-2 text-xs text-amber-400">sin revisar</span>}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <Link to={`/admin/cierres/${c.id}`} className="whitespace-nowrap text-neutral-300 hover:text-white hover:underline">Ver detalle</Link>
                 </td>
               </tr>
             )

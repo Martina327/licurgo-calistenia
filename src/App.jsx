@@ -8,6 +8,7 @@ import ActualizacionApp from './components/ActualizacionApp'
 import Login from './pages/Login'
 import CambiarClave from './pages/CambiarClave'
 import DashboardIngresos from './pages/superadmin/DashboardIngresos'
+import DetalleCierre from './pages/superadmin/DetalleCierre'
 import Productos from './pages/superadmin/Productos'
 import Salones from './pages/superadmin/Salones'
 import Personal from './pages/superadmin/Personal'
@@ -48,6 +49,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route element={<RutaProtegida roles={['SuperAdmin']} />}>
             <Route path="/admin" element={<DashboardIngresos />} />
+            <Route path="/admin/cierres/:id" element={<DetalleCierre />} />
             <Route path="/admin/productos" element={<Productos />} />
             <Route path="/admin/salones" element={<Salones />} />
             <Route path="/admin/personal" element={<Personal />} />

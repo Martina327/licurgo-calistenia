@@ -15,7 +15,8 @@ feature/a4-subalquiler
 |-----|----------|----------|
 | Recepcionista | `/recepcion/caja` → **Cerrar turno** | Arqueo ciego: carga el efectivo contado, confirma y ve solo si cierra justo, sobra o falta (y cuánto) |
 | Recepcionista | Resultado del cierre | Si hay diferencia, la justifica (una sola vez) |
-| SuperAdmin | `/admin` (Ingresos) | Aviso de cierres con diferencia sin revisar, con todos los montos y la justificación; **Marcar revisado** |
+| SuperAdmin | `/admin` (Ingresos) | Franja **Revisar cierre de caja**: al tocarla, cada cierre con sobra/falta y el monto, y **Ver detalle** |
+| SuperAdmin | `/admin/cierres/:id` | Detalle del cierre: resultado y justificación, arqueo, lo cobrado en efectivo en el turno, transferencias de ese horario y **Marcar caja revisada** |
 
 ## Reglas
 
@@ -53,7 +54,7 @@ Decisión del 12/11/2026:
 
 - **Recepcionista:** solo "La caja cierra justo", "Sobran $X" o "Faltan $X". `cerrar_turno` ya no devuelve el efectivo cobrado ni el esperado.
   (Como sabe cuánto contó, podría deducir el esperado sumando la diferencia; ocultarlo del todo sería la opción C.)
-- **Dueño:** aviso dentro de la app, arriba de Ingresos, con cada cierre con diferencia (quién, cuándo, inicial, cobrado, esperado, contado y justificación) hasta que lo marca **revisado** (`marcar_cierre_revisado`, vista `v_cierres_caja`).
+- **Dueño:** aviso corto dentro de la app, arriba de Ingresos ("Revisar cierre de caja"). Se despliega con sobra/falta y monto; **Ver detalle** lleva a la pantalla del cierre con todo lo que pasó en el turno, y ahí se marca **revisada** (`marcar_cierre_revisado`, vistas `v_cierres_caja` y `v_movimientos`). Decisión de Martina, 12/11/2026.
 - **Mejora futura:** aviso por mail al dueño (requiere un servicio de envío de mails y una Edge Function).
 
 Diagrama: `img/diagrama-estados-turno.png`.

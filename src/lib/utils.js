@@ -32,6 +32,16 @@ export const hoyAR = () =>
 export const CATEGORIAS_EJERCICIO = ['Tracción', 'Empuje', 'Core', 'Piernas', 'Movilidad', 'Skill']
 export const BLOQUES_EJERCICIO = ['Entrada en calor', 'Fuerza', 'Accesorios', 'Estiramientos']
 
+// "12/11 20:15" en hora de Argentina
+export const formatearFechaHora = (iso) =>
+  new Date(iso).toLocaleString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+
+// "20:15" en hora de Argentina
+export const formatearHoraAR = (iso) =>
+  new Date(iso).toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hour12: false })
+
 export const formatearPesos = (n) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n ?? 0)
 
