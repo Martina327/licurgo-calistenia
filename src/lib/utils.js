@@ -75,6 +75,7 @@ const MENSAJES = {
   FICHA_INCOMPLETA: 'Falta completar la ficha del alumno (fecha de nacimiento, domicilio y contacto de emergencia) antes de cobrar la primera cuota.',
   FECHA_NACIMIENTO_INVALIDA: 'Revisá la fecha de nacimiento.',
   CANTIDAD_INVALIDA: 'La cantidad tiene que ser un número mayor a 0.',
+  STOCK_NEGATIVO: 'El stock no puede quedar en menos de 0.',
   PRODUCTO_INEXISTENTE: 'Ese producto ya no existe. Recargá la pantalla.',
   ESPACIO_INEXISTENTE: 'Ese salón ya no está disponible. Recargá la pantalla.',
   LOCATARIO_REQUERIDO: 'Escribí quién alquila.',

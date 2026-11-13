@@ -1,18 +1,18 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatearPesos, mensajeError } from '../../lib/utils'
+import { formatearFecha, formatearPesos, hoyAR, mensajeError } from '../../lib/utils'
+import { buscarProductos, COLOR_STOCK, COLOR_VENCIMIENTO, estadoStock, estadoVencimiento } from '../../lib/kiosco'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import { IconoBasurero, IconoBuscar, IconoLapiz } from '../../components/Iconos'
 
 // Productos del kiosco (CU14 · A3). SOLO SuperAdmin (decisión del dueño, 11/11/2026).
-//   · Alta con nombre, precio y stock inicial.
-//   · Ingreso de mercadería: suma stock en una sola operación (cargar_stock).
-//   · Edición de nombre, precio y corrección de stock (recuento de inventario).
-//   · Baja lógica (activo = false): deja de aparecer en el kiosco; no se borra
-//     porque tiene ventas asociadas. Se puede reactivar.
+//   · Buscador por nombre y filtros: a la venta · stock bajo (≤ 10) · dados de baja.
+//   · Stock con − / + y una casilla para escribir el número: se guarda solo con
+//     ajustar_stock (suma o resta la diferencia, no pisa una venta simultánea).
+//   · Lápiz: editar nombre, precio y vencimiento (opcional).
+//   · Basurero: baja lógica (activo = false). No se borra porque tiene ventas; se reactiva.
 // La política productos_write de la base ya impide que otro rol escriba.
-
-const STOCK_BAJO = 5
 
 const aNumero = (txt) => Number(String(txt).replace(/\./g, '').replace(',', '.'))
 const esEntero = (n) => Number.isInteger(n)
@@ -21,18 +21,27 @@ const esEntero = (n) => Number.isInteger(n)
 const errorProducto = (error) =>
   error?.code === '23505' ? 'Ya existe un producto con ese nombre.' : mensajeError(error)
 
+const FILTROS = [
+  { id: 'venta', texto: 'A la venta' },
+  { id: 'bajo', texto: 'Stock bajo' },
+  { id: 'bajas', texto: 'Dados de baja' },
+]
+
+// Columnas en compu: producto · precio · stock · vence · acciones
+const COLUMNAS = 'md:grid-cols-[minmax(0,1fr)_100px_150px_110px_84px]'
+
 export default function Productos() {
   const [productos, setProductos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
   const [mostrarAlta, setMostrarAlta] = useState(false)
-  const [editando, setEditando] = useState(null)   // id
-  const [cargandoStock, setCargandoStock] = useState(null) // id
-  const [verBajas, setVerBajas] = useState(false)
+  const [editando, setEditando] = useState(null) // id
+  const [filtro, setFiltro] = useState('venta')
+  const [busqueda, setBusqueda] = useState('')
 
   const cargar = useCallback(async () => {
-    const { data, error } = await supabase.from('productos').select('id, nombre, precio, stock, activo').order('nombre')
+    const { data, error } = await supabase.from('productos').select('id, nombre, precio, stock, vencimiento, activo').order('nombre')
     setError(error ? mensajeError(error) : '')
     setProductos(data ?? [])
     setCargando(false)
@@ -45,7 +54,6 @@ export default function Productos() {
   const terminar = async (texto) => {
     setMostrarAlta(false)
     setEditando(null)
-    setCargandoStock(null)
     setAviso(texto)
     await cargar()
   }
@@ -54,27 +62,40 @@ export default function Productos() {
     setError('')
     const { error } = await supabase.from('productos').update({ activo: !p.activo }).eq('id', p.id)
     if (error) return setError(errorProducto(error))
-    await terminar(p.activo ? `${p.nombre} se dio de baja: ya no aparece en el kiosco.` : `${p.nombre} volvió a estar a la venta.`)
+    await terminar(p.activo ? `${p.nombre} se dio de baja: ya no aparece en el kiosco. Lo encontrás en "Dados de baja".` : `${p.nombre} volvió a estar a la venta.`)
   }
+
+  // El − / + actualiza solo esa fila, sin recargar toda la lista
+  const actualizarStock = (id, stock) => setProductos((ps) => ps.map((p) => (p.id === id ? { ...p, stock } : p)))
 
   if (cargando) return <Cargando />
 
-  const visibles = productos.filter((p) => p.activo !== verBajas)
-  const cantBajas = productos.filter((p) => !p.activo).length
+  const hoy = hoyAR()
+  const activos = productos.filter((p) => p.activo)
+  const cantidad = {
+    venta: activos.length,
+    bajo: activos.filter((p) => estadoStock(p.stock) !== 'ok').length,
+    bajas: productos.length - activos.length,
+  }
+  const delFiltro =
+    filtro === 'bajas' ? productos.filter((p) => !p.activo)
+    : filtro === 'bajo' ? activos.filter((p) => estadoStock(p.stock) !== 'ok')
+    : activos
+  const visibles = buscarProductos(delFiltro, busqueda)
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Productos del kiosco</h1>
-          <p className="text-sm text-neutral-400">Precios y stock. Recepción solo los ve y los vende.</p>
+          <p className="text-sm text-neutral-400">Precios, stock y vencimientos. Recepción solo los vende.</p>
         </div>
         {!mostrarAlta && (
           <button
-            onClick={() => { setMostrarAlta(true); setEditando(null); setCargandoStock(null); setAviso('') }}
+            onClick={() => { setMostrarAlta(true); setEditando(null); setAviso('') }}
             className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950"
           >
-            + Producto
+            + Nuevo producto
           </button>
         )}
       </div>
@@ -84,64 +105,237 @@ export default function Productos() {
       <Aviso tipo="ok" texto={aviso} />
       <Aviso tipo="error" texto={error} />
 
-      <div className="flex gap-2">
-        <button
-          onClick={() => setVerBajas(false)}
-          className={`rounded-full border px-3 py-1 text-sm ${!verBajas ? 'border-white bg-white text-neutral-950' : 'border-neutral-700 text-neutral-300'}`}
-        >
-          A la venta <span className="opacity-60">({productos.length - cantBajas})</span>
-        </button>
-        <button
-          onClick={() => setVerBajas(true)}
-          className={`rounded-full border px-3 py-1 text-sm ${verBajas ? 'border-white bg-white text-neutral-950' : 'border-neutral-700 text-neutral-300'}`}
-        >
-          Dados de baja <span className="opacity-60">({cantBajas})</span>
-        </button>
+      <div className="space-y-3">
+        <Buscador valor={busqueda} alCambiar={setBusqueda} />
+        <div className="flex flex-wrap gap-2">
+          {FILTROS.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setFiltro(f.id)}
+              className={`rounded-full border px-3 py-1 text-sm ${filtro === f.id ? 'border-white bg-white text-neutral-950' : 'border-neutral-700 text-neutral-300'}`}
+            >
+              {f.texto} <span className="opacity-60">({cantidad[f.id]})</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {visibles.length === 0 ? (
-        <p className="text-sm text-neutral-400">{verBajas ? 'No hay productos dados de baja.' : 'No hay productos cargados.'}</p>
+        <p className="text-sm text-neutral-400">
+          {busqueda.trim() ? `No hay productos con "${busqueda.trim()}".`
+            : filtro === 'bajas' ? 'No hay productos dados de baja.'
+            : filtro === 'bajo' ? 'Ningún producto tiene stock bajo.'
+            : 'No hay productos cargados.'}
+        </p>
       ) : (
-        <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800">
-          {visibles.map((p) => (
-            <li key={p.id} className="space-y-3 px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className={`font-medium ${p.activo ? '' : 'text-neutral-400'}`}>{p.nombre}</p>
-                  <p className="text-sm text-neutral-400">
-                    {formatearPesos(p.precio)} ·{' '}
-                    {p.stock === 0 ? (
-                      <span className="text-red-400">Sin stock</span>
-                    ) : p.stock <= STOCK_BAJO ? (
-                      <span className="text-amber-400">Stock bajo: {p.stock}</span>
-                    ) : (
-                      `Stock: ${p.stock}`
-                    )}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-3 text-sm">
-                  {p.activo && (
-                    <>
-                      <button onClick={() => { setCargandoStock(p.id); setEditando(null); setAviso('') }} className="text-emerald-400 hover:underline">
-                        + Ingreso de mercadería
-                      </button>
-                      <button onClick={() => { setEditando(p.id); setCargandoStock(null); setAviso('') }} className="text-neutral-300 hover:underline">
-                        Editar
-                      </button>
-                    </>
-                  )}
-                  <button onClick={() => cambiarActivo(p)} className={p.activo ? 'text-red-400 hover:underline' : 'text-emerald-400 hover:underline'}>
-                    {p.activo ? 'Dar de baja' : 'Reactivar'}
-                  </button>
-                </div>
-              </div>
-
-              {cargandoStock === p.id && <IngresoMercaderia producto={p} alCancelar={() => setCargandoStock(null)} alGuardar={terminar} />}
-              {editando === p.id && <FormProducto producto={p} alCancelar={() => setEditando(null)} alGuardar={terminar} />}
-            </li>
-          ))}
-        </ul>
+        <div className="overflow-hidden rounded-xl border border-neutral-800">
+          <div className={`hidden gap-3 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wide text-neutral-500 md:grid ${COLUMNAS}`}>
+            <span>Producto</span>
+            <span className="text-right">Precio</span>
+            <span className="text-center">Stock</span>
+            <span>Vence</span>
+            <span />
+          </div>
+          <ul className="divide-y divide-neutral-800">
+            {visibles.map((p) => (
+              <FilaProducto
+                key={p.id}
+                producto={p}
+                hoy={hoy}
+                editando={editando === p.id}
+                alEditar={() => { setEditando(editando === p.id ? null : p.id); setMostrarAlta(false); setAviso('') }}
+                alCancelarEdicion={() => setEditando(null)}
+                alGuardar={terminar}
+                alCambiarActivo={() => cambiarActivo(p)}
+                alCambiarStock={(stock) => actualizarStock(p.id, stock)}
+              />
+            ))}
+          </ul>
+        </div>
       )}
+      <p className="text-xs text-neutral-500">
+        Stock en amarillo: quedan 10 o menos · en rojo: sin stock. Vencimiento en amarillo: vence en 7 días o menos · en rojo: vencido.
+      </p>
+    </div>
+  )
+}
+
+function Buscador({ valor, alCambiar }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-neutral-700 bg-neutral-900 px-3 focus-within:border-neutral-400">
+      <IconoBuscar className="h-4 w-4 shrink-0 text-neutral-500" />
+      <input
+        value={valor}
+        onChange={(e) => alCambiar(e.target.value)}
+        placeholder="Buscar producto por nombre…"
+        inputMode="search"
+        autoComplete="off"
+        className="w-full bg-transparent py-2 outline-none"
+      />
+      {valor && (
+        <button onClick={() => alCambiar('')} className="text-sm text-neutral-500 hover:text-white" aria-label="Borrar búsqueda">✕</button>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------
+// Una fila: en el celu es una tarjeta (nombre + íconos arriba, stock y vence abajo);
+// en la compu son columnas.
+// ---------------------------------------------------------------
+function FilaProducto({ producto: p, hoy, editando, alEditar, alCancelarEdicion, alGuardar, alCambiarActivo, alCambiarStock }) {
+  const venc = estadoVencimiento(p.vencimiento, hoy)
+  return (
+    <li className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 ${COLUMNAS}`}>
+      <div className="order-1 min-w-0">
+        <p className={`font-medium md:truncate ${p.activo ? '' : 'text-neutral-400'}`}>{p.nombre}</p>
+        <p className="text-sm text-neutral-400 md:hidden">{formatearPesos(p.precio)}</p>
+      </div>
+
+      <p className="hidden text-right tabular-nums md:order-2 md:block">{formatearPesos(p.precio)}</p>
+
+      <div className="order-3 md:order-3 md:justify-self-center">
+        {p.activo ? (
+          <ControlStock producto={p} alCambiar={alCambiarStock} />
+        ) : (
+          <span className="text-sm text-neutral-500">Stock: {p.stock}</span>
+        )}
+      </div>
+
+      <p className={`order-4 justify-self-end text-sm md:order-4 md:justify-self-start ${p.vencimiento ? '' : 'hidden md:block'} ${venc ? COLOR_VENCIMIENTO[venc] : 'text-neutral-600'}`}>
+        {p.vencimiento && <span className="text-neutral-500 md:hidden">Vence </span>}
+        {p.vencimiento ? formatearFecha(p.vencimiento) : '—'}
+        {venc === 'vencido' && <span className="ml-1 text-xs md:ml-0 md:block">vencido</span>}
+      </p>
+
+      <div className="order-2 flex justify-end gap-1 md:order-5">
+        {p.activo ? (
+          <>
+            <BotonIcono onClick={alEditar} etiqueta={`Editar ${p.nombre}`} className="text-white hover:bg-neutral-800">
+              <IconoLapiz className="h-4 w-4" />
+            </BotonIcono>
+            <BotonIcono onClick={alCambiarActivo} etiqueta={`Dar de baja ${p.nombre}`} className="text-red-400 hover:bg-red-950">
+              <IconoBasurero className="h-4 w-4" />
+            </BotonIcono>
+          </>
+        ) : (
+          <button onClick={alCambiarActivo} className="rounded-lg border border-emerald-800 px-3 py-1.5 text-sm text-emerald-300 hover:bg-emerald-950">
+            Reactivar
+          </button>
+        )}
+      </div>
+
+      {editando && (
+        <div className="order-last col-span-full">
+          <FormProducto producto={p} alCancelar={alCancelarEdicion} alGuardar={alGuardar} />
+        </div>
+      )}
+    </li>
+  )
+}
+
+function BotonIcono({ onClick, etiqueta, className = '', children }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={etiqueta}
+      title={etiqueta}
+      className={`flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-800 ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------
+// Stock: − [casilla] +
+// Se guarda solo un momento después del último toque (o al salir de la casilla).
+// Se manda la diferencia (ajustar_stock), así no pisa una venta que entre a la vez.
+// ---------------------------------------------------------------
+const ESPERA_GUARDADO = 700
+
+function ControlStock({ producto, alCambiar }) {
+  const [valor, setValor] = useState(String(producto.stock))
+  const [estado, setEstado] = useState('') // '' · 'guardando' · 'ok' · mensaje de error
+  const base = useRef(producto.stock) // último stock confirmado por la base
+  const reloj = useRef(null)
+
+  // Si la lista se recarga con otro stock (y no estoy escribiendo), lo tomo
+  useEffect(() => {
+    if (!reloj.current && producto.stock !== base.current) {
+      base.current = producto.stock
+      setValor(String(producto.stock))
+    }
+  }, [producto.stock])
+
+  useEffect(() => () => clearTimeout(reloj.current), [])
+
+  const guardar = async (texto) => {
+    clearTimeout(reloj.current)
+    reloj.current = null
+    if (texto === '') return setValor(String(base.current)) // casilla vacía: vuelve al anterior
+    const nuevo = Number(texto)
+    const delta = nuevo - base.current
+    if (delta === 0) return
+    setEstado('guardando')
+    const { data, error } = await supabase.rpc('ajustar_stock', { p_producto_id: producto.id, p_delta: delta })
+    if (error) {
+      setEstado(mensajeError(error))
+      setValor(String(base.current))
+      return
+    }
+    base.current = data
+    setValor(String(data))
+    alCambiar(data)
+    setEstado('ok')
+    setTimeout(() => setEstado((e) => (e === 'ok' ? '' : e)), 1500)
+  }
+
+  const programar = (texto) => {
+    setValor(texto)
+    setEstado('')
+    clearTimeout(reloj.current)
+    reloj.current = setTimeout(() => guardar(texto), ESPERA_GUARDADO)
+  }
+
+  const sumar = (n) => programar(String(Math.max(0, (Number(valor) || 0) + n)))
+  const numero = Number(valor) || 0
+  const nivel = estadoStock(numero)
+  const color = nivel === 'ok' ? 'text-white' : COLOR_STOCK[nivel]
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => sumar(-1)}
+          disabled={numero <= 0}
+          aria-label={`Restar 1 a ${producto.nombre}`}
+          className="h-9 w-9 rounded-lg border border-neutral-700 text-lg leading-none hover:bg-neutral-800 disabled:opacity-30"
+        >
+          −
+        </button>
+        <input
+          value={valor}
+          onChange={(e) => programar(e.target.value.replace(/\D/g, '').slice(0, 5))}
+          onBlur={() => reloj.current && guardar(valor)}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          onFocus={(e) => e.target.select()}
+          inputMode="numeric"
+          aria-label={`Stock de ${producto.nombre}`}
+          className={`h-9 w-14 rounded-lg border border-neutral-700 bg-neutral-950 text-center font-semibold tabular-nums outline-none focus:border-neutral-400 ${color}`}
+        />
+        <button
+          onClick={() => sumar(1)}
+          aria-label={`Sumar 1 a ${producto.nombre}`}
+          className="h-9 w-9 rounded-lg border border-neutral-700 text-lg leading-none hover:bg-neutral-800"
+        >
+          +
+        </button>
+        <span className="w-4 text-center text-xs">
+          {estado === 'guardando' ? <span className="text-neutral-500">…</span> : estado === 'ok' ? <span className="text-emerald-400">✓</span> : ''}
+        </span>
+      </div>
+      {estado && estado !== 'guardando' && estado !== 'ok' && <p className="text-xs text-red-400">{estado}</p>}
     </div>
   )
 }
@@ -149,14 +343,15 @@ export default function Productos() {
 const campo = 'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-neutral-400'
 
 // ---------------------------------------------------------------
-// Alta y edición
+// Alta y edición (el stock se cambia con − / +; acá solo el inicial)
 // ---------------------------------------------------------------
 function FormProducto({ producto, alCancelar, alGuardar }) {
   const esNuevo = !producto
   const [datos, setDatos] = useState({
     nombre: producto?.nombre ?? '',
     precio: producto ? String(producto.precio) : '',
-    stock: producto ? String(producto.stock) : '',
+    stock: '',
+    vencimiento: producto?.vencimiento ?? '',
   })
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -171,10 +366,10 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
     const stock = aNumero(datos.stock === '' ? '0' : datos.stock)
     if (!nombre) return setError('Ingresá el nombre del producto.')
     if (!(precio > 0)) return setError('El precio tiene que ser mayor a 0.')
-    if (!esEntero(stock) || stock < 0) return setError('El stock tiene que ser un número entero, 0 o más.')
+    if (esNuevo && (!esEntero(stock) || stock < 0)) return setError('El stock tiene que ser un número entero, 0 o más.')
 
     setEnviando(true)
-    const fila = { nombre, precio, stock }
+    const fila = { nombre, precio, vencimiento: datos.vencimiento || null, ...(esNuevo ? { stock } : {}) }
     const { error } = esNuevo
       ? await supabase.from('productos').insert(fila)
       : await supabase.from('productos').update(fila).eq('id', producto.id)
@@ -186,8 +381,8 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
   return (
     <form onSubmit={guardar} className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
       <h2 className="font-semibold">{esNuevo ? 'Nuevo producto' : 'Editar producto'}</h2>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <label className="space-y-1 text-sm sm:col-span-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1 text-sm sm:col-span-2">
           <span className="text-neutral-400">Nombre</span>
           <input value={datos.nombre} onChange={cambiar('nombre')} placeholder="Ej.: Agua 500 ml" className={campo} autoFocus />
         </label>
@@ -198,15 +393,20 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
             <input value={datos.precio} onChange={cambiar('precio')} inputMode="numeric" className="w-full bg-transparent px-2 py-2 outline-none" />
           </div>
         </label>
+        {esNuevo && (
+          <label className="space-y-1 text-sm">
+            <span className="text-neutral-400">Stock inicial</span>
+            <input value={datos.stock} onChange={cambiar('stock')} inputMode="numeric" placeholder="0" className={campo} />
+          </label>
+        )}
         <label className="space-y-1 text-sm">
-          <span className="text-neutral-400">{esNuevo ? 'Stock inicial' : 'Stock (corrección)'}</span>
-          <input value={datos.stock} onChange={cambiar('stock')} inputMode="numeric" placeholder="0" className={campo} />
+          <span className="text-neutral-400">Vencimiento <span className="text-neutral-600">(opcional)</span></span>
+          <input type="date" value={datos.vencimiento} onChange={cambiar('vencimiento')} className={`${campo} [color-scheme:dark]`} />
         </label>
       </div>
       {!esNuevo && (
         <p className="text-xs text-neutral-500">
-          Cambiá el stock solo para corregir un recuento. Para sumar mercadería que llegó usá "+ Ingreso de mercadería".
-          Un cambio de precio vale para las ventas siguientes; las anteriores conservan su precio.
+          Un cambio de precio vale para las ventas siguientes; las anteriores conservan su precio. El stock se cambia con − / + en la lista.
         </p>
       )}
       <Aviso tipo="error" texto={error} />
@@ -218,45 +418,6 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
           {enviando ? 'Guardando…' : esNuevo ? 'Agregar' : 'Guardar cambios'}
         </button>
       </div>
-    </form>
-  )
-}
-
-// ---------------------------------------------------------------
-// Ingreso de mercadería (suma stock)
-// ---------------------------------------------------------------
-function IngresoMercaderia({ producto, alCancelar, alGuardar }) {
-  const [cantidad, setCantidad] = useState('')
-  const [error, setError] = useState('')
-  const [enviando, setEnviando] = useState(false)
-
-  const guardar = async (e) => {
-    e.preventDefault()
-    setError('')
-    const n = aNumero(cantidad)
-    if (!esEntero(n) || n <= 0) return setError('Ingresá cuántas unidades llegaron (número entero mayor a 0).')
-    setEnviando(true)
-    const { data, error } = await supabase.rpc('cargar_stock', { p_producto_id: producto.id, p_cantidad: n })
-    setEnviando(false)
-    if (error) return setError(mensajeError(error))
-    alGuardar(`Se sumaron ${n} unidades de ${producto.nombre}. Stock actual: ${data}.`)
-  }
-
-  return (
-    <form onSubmit={guardar} className="flex flex-wrap items-end gap-3 rounded-xl border border-emerald-900 bg-emerald-950/30 p-3">
-      <label className="space-y-1 text-sm">
-        <span className="text-neutral-300">Unidades que llegaron</span>
-        <input value={cantidad} onChange={(e) => setCantidad(e.target.value)} inputMode="numeric" className={`${campo} w-40`} autoFocus />
-      </label>
-      <div className="flex gap-2">
-        <button type="button" onClick={alCancelar} className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800">
-          Cancelar
-        </button>
-        <button type="submit" disabled={enviando} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
-          {enviando ? 'Sumando…' : 'Sumar al stock'}
-        </button>
-      </div>
-      <div className="basis-full"><Aviso tipo="error" texto={error} /></div>
     </form>
   )
 }

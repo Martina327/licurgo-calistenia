@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { formatearFecha, formatearPesos, hoyAR, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
+import { IconoBuscar } from '../../components/Iconos'
+import { buscarProductos, COLOR_STOCK, estadoStock, estadoVencimiento } from '../../lib/kiosco'
 
 // Caja (Pareja A). Recepción y SuperAdmin.
 //   A2 · Abrir el turno de caja con el monto inicial (el cambio que hay en la caja).
@@ -530,11 +532,12 @@ function Kiosco() {
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
   const [ultimaVenta, setUltimaVenta] = useState(null)
+  const [busqueda, setBusqueda] = useState('')
 
   const cargar = useCallback(async () => {
     const { data, error } = await supabase
       .from('productos')
-      .select('id, nombre, precio, stock')
+      .select('id, nombre, precio, stock, vencimiento')
       .eq('activo', true)
       .order('nombre')
     if (error) setError(mensajeError(error))
@@ -545,6 +548,16 @@ function Kiosco() {
   useEffect(() => {
     cargar()
   }, [cargar])
+
+  // Celular: la barra con el total se esconde cuando el panel de la venta ya está a la vista
+  const panel = useRef(null)
+  const [panelVisible, setPanelVisible] = useState(false)
+  useEffect(() => {
+    if (!panel.current || typeof IntersectionObserver === 'undefined') return
+    const obs = new IntersectionObserver(([e]) => setPanelVisible(e.isIntersecting), { threshold: 0.2 })
+    obs.observe(panel.current)
+    return () => obs.disconnect()
+  }, [cargando])
 
   const cambiarCantidad = (prod, delta) => {
     setUltimaVenta(null)
@@ -589,11 +602,15 @@ function Kiosco() {
 
   if (cargando) return <Cargando />
 
+  const hoy = hoyAR()
+  const visibles = buscarProductos(productos, busqueda)
+  const unidades = items.reduce((t, i) => t + i.cantidad, 0)
+
   return (
-    <section className="space-y-3">
+    <section className="space-y-3 pb-20 lg:pb-0">
       <div>
         <h2 className="text-lg font-semibold">Kiosco</h2>
-        <p className="text-sm text-neutral-400">Elegí los productos y el medio de pago.</p>
+        <p className="text-sm text-neutral-400">Tocá un producto para sumarlo a la venta.</p>
       </div>
 
       {ultimaVenta && (
@@ -605,59 +622,100 @@ function Kiosco() {
         </div>
       )}
 
-      {productos.length === 0 ? (
-        <p className="text-sm text-neutral-400">No hay productos cargados.</p>
-      ) : (
-        <ul className="divide-y divide-neutral-800 rounded-xl border border-neutral-800">
-          {productos.map((p) => {
-            const cant = carrito[p.id] ?? 0
-            const agotado = p.stock === 0
-            return (
-              <li key={p.id} className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${agotado ? 'opacity-50' : ''}`}>
-                <div>
-                  <p className="font-medium">{p.nombre}</p>
-                  <p className="text-xs text-neutral-400">
-                    {formatearPesos(p.precio)} · {agotado ? <span className="text-red-400">Sin stock</span> : `Stock: ${p.stock}`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+        {/* Productos */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 rounded-lg border border-neutral-700 bg-neutral-900 px-3 focus-within:border-neutral-400">
+            <IconoBuscar className="h-4 w-4 shrink-0 text-neutral-500" />
+            <input
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar producto…"
+              inputMode="search"
+              autoComplete="off"
+              className="w-full bg-transparent py-2.5 outline-none"
+            />
+            {busqueda && (
+              <button onClick={() => setBusqueda('')} className="text-sm text-neutral-500 hover:text-white" aria-label="Borrar búsqueda">✕</button>
+            )}
+          </div>
+
+          {productos.length === 0 ? (
+            <p className="text-sm text-neutral-400">No hay productos cargados.</p>
+          ) : visibles.length === 0 ? (
+            <p className="text-sm text-neutral-400">No hay productos con "{busqueda.trim()}".</p>
+          ) : (
+            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {visibles.map((p) => {
+                const cant = carrito[p.id] ?? 0
+                const stock = estadoStock(p.stock)
+                const venc = estadoVencimiento(p.vencimiento, hoy)
+                const lleno = cant >= p.stock
+                return (
+                  <li key={p.id}>
+                    <button
+                      onClick={() => cambiarCantidad(p, 1)}
+                      disabled={lleno}
+                      className={`relative flex h-full w-full flex-col items-start gap-1 rounded-xl border p-3 text-left transition ${
+                        cant > 0 ? 'border-white bg-neutral-900' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'
+                      } ${stock === 'sin' ? 'opacity-40' : ''} disabled:cursor-not-allowed`}
+                    >
+                      {cant > 0 && (
+                        <span className="absolute right-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-1.5 text-xs font-bold text-neutral-950">
+                          {cant}
+                        </span>
+                      )}
+                      <span className="pr-7 text-sm font-medium leading-tight">{p.nombre}</span>
+                      <span className="text-base font-semibold tabular-nums">{formatearPesos(p.precio)}</span>
+                      <span className={`text-xs ${COLOR_STOCK[stock]}`}>
+                        {stock === 'sin' ? 'Sin stock' : `Stock: ${p.stock}`}
+                        {venc === 'vencido' && <span className="text-red-400"> · Vencido</span>}
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+
+        {/* Venta actual */}
+        <div ref={panel} className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4 lg:sticky lg:top-4">
+          <h3 className="text-xs uppercase tracking-wide text-neutral-500">Venta actual</h3>
+          {items.length === 0 ? (
+            <p className="py-6 text-center text-sm text-neutral-500">Todavía no agregaste productos.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {items.map((i) => (
+                <li key={i.id} className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate">{i.nombre}</p>
+                    <p className="text-xs text-neutral-500 tabular-nums">{formatearPesos(i.subtotal)}</p>
+                  </div>
                   <button
-                    onClick={() => cambiarCantidad(p, -1)}
-                    disabled={cant === 0}
-                    className="h-8 w-8 rounded-lg border border-neutral-700 text-lg leading-none disabled:opacity-30"
-                    aria-label={`Quitar ${p.nombre}`}
+                    onClick={() => cambiarCantidad(i, -1)}
+                    className="h-7 w-7 rounded-lg border border-neutral-700 leading-none hover:bg-neutral-800"
+                    aria-label={`Quitar ${i.nombre}`}
                   >
                     −
                   </button>
-                  <span className="w-6 text-center tabular-nums">{cant}</span>
+                  <span className="w-5 text-center tabular-nums">{i.cantidad}</span>
                   <button
-                    onClick={() => cambiarCantidad(p, 1)}
-                    disabled={cant >= p.stock}
-                    className="h-8 w-8 rounded-lg border border-neutral-700 text-lg leading-none disabled:opacity-30"
-                    aria-label={`Agregar ${p.nombre}`}
+                    onClick={() => cambiarCantidad(i, 1)}
+                    disabled={i.cantidad >= i.stock}
+                    className="h-7 w-7 rounded-lg border border-neutral-700 leading-none hover:bg-neutral-800 disabled:opacity-30"
+                    aria-label={`Agregar ${i.nombre}`}
                   >
                     +
                   </button>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+                </li>
+              ))}
+            </ul>
+          )}
 
-      {items.length > 0 && (
-        <div className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-          <ul className="space-y-1 text-sm">
-            {items.map((i) => (
-              <li key={i.id} className="flex justify-between">
-                <span>{i.cantidad} × {i.nombre}</span>
-                <span className="tabular-nums">{formatearPesos(i.subtotal)}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="flex items-baseline justify-between border-t border-neutral-800 pt-2">
-            <span className="text-neutral-400">Total</span>
-            <span className="text-xl font-semibold tabular-nums">{formatearPesos(total)}</span>
+          <div className="flex items-baseline justify-between border-t border-neutral-800 pt-3">
+            <span className="font-semibold">Total</span>
+            <span className="text-2xl font-bold tabular-nums">{formatearPesos(total)}</span>
           </div>
 
           <div className="flex gap-2">
@@ -679,18 +737,38 @@ function Kiosco() {
 
           <Aviso tipo="error" texto={error} />
 
-          <div className="flex justify-end gap-2">
-            <button onClick={() => { setCarrito({}); setError('') }} className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800">
+          <button
+            onClick={vender}
+            disabled={enviando || items.length === 0}
+            className="w-full rounded-lg bg-white py-3 font-semibold text-neutral-950 disabled:opacity-40"
+          >
+            {enviando ? 'Registrando…' : items.length ? `Cobrar ${formatearPesos(total)}` : 'Cobrar'}
+          </button>
+          {items.length > 0 && (
+            <button onClick={() => { setCarrito({}); setError('') }} className="w-full rounded-lg border border-neutral-700 py-2 text-sm hover:bg-neutral-800">
               Vaciar
             </button>
-            <button onClick={vender} disabled={enviando} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
-              {enviando ? 'Registrando…' : `Cobrar ${formatearPesos(total)}`}
+          )}
+        </div>
+      </div>
+
+      {/* Celular: barra fija abajo con el total mientras se eligen productos */}
+      {items.length > 0 && !panelVisible && (
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-neutral-800 bg-neutral-950/95 px-4 py-3 backdrop-blur lg:hidden">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+            <div>
+              <p className="text-xs text-neutral-400">{unidades} producto{unidades === 1 ? '' : 's'}</p>
+              <p className="text-lg font-bold tabular-nums">{formatearPesos(total)}</p>
+            </div>
+            <button
+              onClick={() => panel.current?.scrollIntoView({ behavior: 'smooth' })}
+              className="rounded-lg bg-white px-5 py-2.5 font-semibold text-neutral-950"
+            >
+              Ver venta
             </button>
           </div>
         </div>
       )}
-
-      {items.length === 0 && <Aviso tipo="error" texto={error} />}
     </section>
   )
 }
