@@ -35,3 +35,13 @@ export function buscarProductos(productos, busqueda) {
 // Colores de texto para stock y vencimiento
 export const COLOR_STOCK = { sin: 'text-red-400', bajo: 'text-amber-400', ok: 'text-neutral-400' }
 export const COLOR_VENCIMIENTO = { vencido: 'text-red-400', por_vencer: 'text-amber-400', ok: 'text-neutral-400' }
+
+// Texto que aparece al pasar el mouse sobre un número en color (explica qué significa)
+export const AYUDA_STOCK = {
+  sin: 'En rojo: sin stock, no se puede vender.',
+  bajo: `En amarillo: stock bajo, quedan ${STOCK_BAJO} o menos. Conviene reponer.`,
+}
+export const AYUDA_VENCIMIENTO = {
+  vencido: 'En rojo: el producto ya venció.',
+  por_vencer: `En amarillo: vence en ${DIAS_POR_VENCER} días o menos.`,
+}

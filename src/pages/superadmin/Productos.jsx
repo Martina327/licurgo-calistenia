@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, formatearPesos, hoyAR, mensajeError } from '../../lib/utils'
-import { buscarProductos, COLOR_STOCK, COLOR_VENCIMIENTO, estadoStock, estadoVencimiento } from '../../lib/kiosco'
+import { AYUDA_STOCK, AYUDA_VENCIMIENTO, buscarProductos, COLOR_STOCK, COLOR_VENCIMIENTO, estadoStock, estadoVencimiento } from '../../lib/kiosco'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import { IconoBasurero, IconoBuscar, IconoLapiz } from '../../components/Iconos'
@@ -85,11 +85,8 @@ export default function Productos() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Productos del kiosco</h1>
-          <p className="text-sm text-neutral-400">Precios, stock y vencimientos. Recepción solo los vende.</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Productos del kiosco</h1>
         {!mostrarAlta && (
           <button
             onClick={() => { setMostrarAlta(true); setEditando(null); setAviso('') }}
@@ -153,9 +150,6 @@ export default function Productos() {
           </ul>
         </div>
       )}
-      <p className="text-xs text-neutral-500">
-        Stock en amarillo: quedan 10 o menos · en rojo: sin stock. Vencimiento en amarillo: vence en 7 días o menos · en rojo: vencido.
-      </p>
     </div>
   )
 }
@@ -202,7 +196,10 @@ function FilaProducto({ producto: p, hoy, editando, alEditar, alCancelarEdicion,
         )}
       </div>
 
-      <p className={`order-4 justify-self-end text-sm md:order-4 md:justify-self-start ${p.vencimiento ? '' : 'hidden md:block'} ${venc ? COLOR_VENCIMIENTO[venc] : 'text-neutral-600'}`}>
+      <p
+        title={AYUDA_VENCIMIENTO[venc]}
+        className={`order-4 justify-self-end text-sm md:order-4 md:justify-self-start ${p.vencimiento ? '' : 'hidden md:block'} ${venc ? COLOR_VENCIMIENTO[venc] : 'text-neutral-600'} ${AYUDA_VENCIMIENTO[venc] ? 'cursor-help' : ''}`}
+      >
         {p.vencimiento && <span className="text-neutral-500 md:hidden">Vence </span>}
         {p.vencimiento ? formatearFecha(p.vencimiento) : '—'}
         {venc === 'vencido' && <span className="ml-1 text-xs md:ml-0 md:block">vencido</span>}
@@ -322,6 +319,7 @@ function ControlStock({ producto, alCambiar }) {
           onFocus={(e) => e.target.select()}
           inputMode="numeric"
           aria-label={`Stock de ${producto.nombre}`}
+          title={AYUDA_STOCK[nivel]}
           className={`h-9 w-14 rounded-lg border border-neutral-700 bg-neutral-950 text-center font-semibold tabular-nums outline-none focus:border-neutral-400 ${color}`}
         />
         <button
