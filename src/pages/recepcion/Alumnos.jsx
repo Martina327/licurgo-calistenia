@@ -8,6 +8,7 @@ import Aviso from '../../components/Aviso'
 import CampoFecha from '../../components/CampoFecha'
 import { EtiquetaAlumno, EtiquetaUnica } from '../../components/EtiquetaEstado'
 import { Chevron, IconoBuscar } from '../../components/Iconos'
+import { horaAR, situacionCheckin, TONOS } from '../../lib/checkin'
 
 // Gestión de alumnos (CU01 · A1). Recepción y SuperAdmin.
 //   · Buscador y filtros; la ficha de cada alumno está en FichaAlumno.jsx.
@@ -34,20 +35,38 @@ export default function Alumnos() {
   })
   const [mostrarAlta, setMostrarAlta] = useState(false)
   const [avisoOk, setAvisoOk] = useState('')
+  const [presentes, setPresentes] = useState({}) // { alumno_id: fecha_hora } de hoy
+  const [marcando, setMarcando] = useState(null)
+  const [resultado, setResultado] = useState(null) // { alumno, situacion, hora }
   const ir = useNavigate()
 
+  // Presente desde la lista (igual que en el Mostrador): la cuota vencida avisa, no bloquea
+  const marcarPresente = async (alumno) => {
+    if (marcando) return
+    setError('')
+    setMarcando(alumno.alumno_id)
+    const { data, error } = await supabase.rpc('registrar_checkin', { p_alumno_id: alumno.alumno_id })
+    setMarcando(null)
+    if (error) return setError(mensajeError(error))
+    const hora = data?.fecha_hora ?? new Date().toISOString()
+    setPresentes((p) => ({ ...p, [alumno.alumno_id]: hora }))
+    setResultado({ alumno, situacion: situacionCheckin(alumno), hora })
+  }
+
   const cargar = useCallback(async () => {
-    const [m, b] = await Promise.all([
+    const [m, b, p] = await Promise.all([
       supabase
         .from('v_membresias')
         .select('alumno_id, dni, nombre, apellido, telefono, estado_alumno, estado_membresia, fecha_vencimiento, dias_restantes, fecha_clase_prueba, datos_faltantes, pase_libre, pase_libre_motivo')
         .order('apellido'),
       supabase.from('v_alumnos_baja').select('*').order('apellido'),
+      supabase.from('asistencias').select('alumno_id, fecha_hora').eq('fecha', hoyAR()),
     ])
     const err = m.error ?? b.error
     setError(err ? mensajeError(err) : '')
     setAlumnos(m.data ?? [])
     setBajas((b.data ?? []).map((a) => ({ ...a, deBaja: true })))
+    setPresentes(Object.fromEntries((p.data ?? []).map((x) => [x.alumno_id, x.fecha_hora])))
     setCargando(false)
   }, [])
 
@@ -111,12 +130,21 @@ export default function Alumnos() {
 
       <Aviso tipo="ok" texto={avisoOk} />
       <Aviso tipo="error" texto={error} />
+      {resultado && (
+        <div role="status" className={`rounded-xl border px-4 py-3 ${TONOS[resultado.situacion.tono].caja}`}>
+          <p className="font-semibold">
+            Presente registrado · {resultado.alumno.nombre} {resultado.alumno.apellido}
+            <span className="font-normal opacity-70"> · {horaAR(resultado.hora)}</span>
+          </p>
+          <p className="text-sm opacity-90">{resultado.situacion.texto}</p>
+        </div>
+      )}
 
       <div className="flex items-center gap-2 rounded-xl border border-neutral-700 bg-neutral-900 px-4 focus-within:border-neutral-400">
         <IconoBuscar className="h-5 w-5 shrink-0 text-neutral-500" />
         <input
           value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
+          onChange={(e) => { setBusqueda(e.target.value); setResultado(null) }}
           placeholder="Buscar por DNI o nombre"
           inputMode="search"
           autoComplete="off"
@@ -149,11 +177,7 @@ export default function Alumnos() {
       ) : visibles.length > 0 && (
         <ul className="divide-y divide-neutral-800 overflow-hidden rounded-xl border border-neutral-800">
           {visibles.map((a) => (
-            <li key={a.alumno_id}>
-              <button
-                onClick={() => ir(`/recepcion/alumnos/${a.alumno_id}`)}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-neutral-900"
-              >
+            <li key={a.alumno_id} className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-2">
                     <span className={`font-medium ${a.deBaja ? 'text-neutral-400' : ''}`}>{a.apellido}, {a.nombre}</span>
@@ -168,8 +192,25 @@ export default function Alumnos() {
                 ) : (
                   <EtiquetaUnica alumno={a} />
                 )}
-                <Chevron className="h-4 w-4 shrink-0 text-neutral-600" />
-              </button>
+                {!a.deBaja && (presentes[a.alumno_id] ? (
+                  <span className="w-24 shrink-0 text-right text-sm text-emerald-300">✓ {horaAR(presentes[a.alumno_id])}</span>
+                ) : (
+                  <button
+                    onClick={() => marcarPresente(a)}
+                    disabled={Boolean(marcando)}
+                    className="w-24 shrink-0 rounded-lg bg-white py-1.5 text-sm font-semibold text-neutral-950 disabled:opacity-50"
+                  >
+                    {marcando === a.alumno_id ? '…' : 'Presente'}
+                  </button>
+                ))}
+                <button
+                  onClick={() => ir(`/recepcion/alumnos/${a.alumno_id}`)}
+                  aria-label={`Ver ficha de ${a.nombre} ${a.apellido}`}
+                  title="Ver ficha"
+                  className="-mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                >
+                  <Chevron className="h-5 w-5" />
+                </button>
             </li>
           ))}
         </ul>
