@@ -4,6 +4,7 @@ import { formatearFecha, formatearPesos, hoyAR, mensajeError } from '../../lib/u
 import { AYUDA_STOCK, ayudaVencimiento, buscarProductos, COLOR_STOCK, COLOR_VENCIMIENTO, estadoStock, estadoVencimiento } from '../../lib/kiosco'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import Ayuda from '../../components/Ayuda'
 import CampoFecha from '../../components/CampoFecha'
 import { IconoBasurero, IconoBuscar, IconoLapiz } from '../../components/Iconos'
 
@@ -386,7 +387,10 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
           <input value={datos.nombre} onChange={cambiar('nombre')} placeholder="Ej.: Agua 500 ml" className={campo} autoFocus />
         </label>
         <label className="space-y-1 text-sm">
-          <span className="text-neutral-400">Precio</span>
+          <span className="flex items-center text-neutral-400">
+            Precio
+            {!esNuevo && <Ayuda texto="Un cambio de precio vale para las ventas siguientes; las anteriores conservan su precio. El stock se cambia con − / + en la lista." />}
+          </span>
           <div className="flex items-center rounded-lg border border-neutral-700 bg-neutral-950 focus-within:border-neutral-400">
             <span className="pl-3 text-neutral-500">$</span>
             <input value={datos.precio} onChange={cambiar('precio')} inputMode="numeric" className="w-full bg-transparent px-2 py-2 outline-none" />
@@ -403,11 +407,6 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
           <CampoFecha value={datos.vencimiento} onChange={cambiar('vencimiento')} className={campo} />
         </label>
       </div>
-      {!esNuevo && (
-        <p className="text-xs text-neutral-500">
-          Un cambio de precio vale para las ventas siguientes; las anteriores conservan su precio. El stock se cambia con − / + en la lista.
-        </p>
-      )}
       <Aviso tipo="error" texto={error} />
       <div className="flex justify-end gap-2">
         <button type="button" onClick={alCancelar} className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800">
