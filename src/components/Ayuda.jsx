@@ -25,7 +25,7 @@ export default function Ayuda({ texto }) {
       </button>
       <span
         role="tooltip"
-        className={`absolute bottom-full -left-16 z-30 mb-2 w-60 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-xs font-normal leading-snug text-neutral-200 shadow-lg ${
+        className={`absolute bottom-full -left-2 z-30 mb-2 w-60 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-xs font-normal normal-case leading-snug tracking-normal text-neutral-200 shadow-lg ${
           abierta ? 'block' : 'hidden group-hover:block'
         }`}
       >

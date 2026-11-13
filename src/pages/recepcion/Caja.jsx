@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { formatearFecha, formatearPesos, hoyAR, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import Ayuda from '../../components/Ayuda'
 import CampoFecha from '../../components/CampoFecha'
 import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 import { IconoBuscar } from '../../components/Iconos'
@@ -72,10 +73,10 @@ export default function Caja() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">Caja</h1>
-        <p className="text-sm text-neutral-400">Cobros del mostrador. Lo cobrado en efectivo se registra en tu turno de caja.</p>
-      </div>
+      <h1 className="flex items-center gap-1 text-xl font-semibold">
+        Caja
+        <Ayuda texto="Cobros del mostrador. Lo cobrado en efectivo se registra en tu turno de caja." />
+      </h1>
 
       <Aviso tipo="error" texto={error} />
 
@@ -256,10 +257,10 @@ function CobrarCuota({ esDueno = false }) {
 
   return (
     <section className="space-y-3">
-      <div>
-        <h2 className="text-lg font-semibold">Cobrar cuota</h2>
-        <p className="text-sm text-neutral-400">Buscá al alumno por DNI o nombre. Cada cuota suma 30 días a su vencimiento.</p>
-      </div>
+      <h2 className="flex items-center gap-1 text-lg font-semibold">
+        Cobrar cuota
+        <Ayuda texto="Buscá al alumno por DNI o nombre. Cada cuota suma 30 días a su vencimiento." />
+      </h2>
 
       <Aviso tipo="error" texto={error} />
 
@@ -610,10 +611,10 @@ function Kiosco() {
 
   return (
     <section className="space-y-3 pb-20 lg:pb-0">
-      <div>
-        <h2 className="text-lg font-semibold">Kiosco</h2>
-        <p className="text-sm text-neutral-400">Tocá un producto para sumarlo a la venta.</p>
-      </div>
+      <h2 className="flex items-center gap-1 text-lg font-semibold">
+        Kiosco
+        <Ayuda texto="Tocá un producto para sumarlo a la venta." />
+      </h2>
 
       {ultimaVenta && (
         <div className="rounded-xl border border-emerald-900 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-200">
@@ -720,6 +721,7 @@ function Kiosco() {
             <span className="text-2xl font-bold tabular-nums">{formatearPesos(total)}</span>
           </div>
 
+          <p className="flex items-center text-xs uppercase tracking-wide text-neutral-500">Medio de pago<Ayuda texto="Si es transferencia, confirmá que llegó antes de registrar. No entra en el efectivo de tu caja." /></p>
           <div className="flex gap-2">
             {MEDIOS.map((m) => (
               <button
@@ -733,9 +735,6 @@ function Kiosco() {
               </button>
             ))}
           </div>
-          {medio === 'Transferencia' && (
-            <p className="text-xs text-neutral-400">Confirmá que la transferencia llegó antes de registrar. No entra en el efectivo de tu caja.</p>
-          )}
 
           <Aviso tipo="error" texto={error} />
 
@@ -886,10 +885,10 @@ function Subalquiler() {
 
   return (
     <section className="space-y-3">
-      <div>
-        <h2 className="text-lg font-semibold">Subalquiler</h2>
-        <p className="text-sm text-neutral-400">Cobro del alquiler de un salón, por hora o por mes. El precio lo define el dueño.</p>
-      </div>
+      <h2 className="flex items-center gap-1 text-lg font-semibold">
+        Subalquiler
+        <Ayuda texto="Cobro del alquiler de un salón, por hora o por mes. El precio lo define el dueño." />
+      </h2>
 
       {ultimo && (
         <div className="rounded-xl border border-emerald-900 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-200">
@@ -964,6 +963,7 @@ function Subalquiler() {
                 <span className="text-xl font-semibold tabular-nums">{formatearPesos(total)}</span>
               </div>
 
+              <p className="flex items-center text-xs uppercase tracking-wide text-neutral-500">Medio de pago<Ayuda texto="Si es transferencia, confirmá que llegó antes de registrar. No entra en el efectivo de tu caja." /></p>
               <div className="flex gap-2">
                 {MEDIOS.map((m) => (
                   <button key={m} type="button" onClick={() => setMedio(m)} className={opcion(medio === m)}>
@@ -971,9 +971,6 @@ function Subalquiler() {
                   </button>
                 ))}
               </div>
-              {medio === 'Transferencia' && (
-                <p className="text-xs text-neutral-400">Confirmá que la transferencia llegó antes de registrar. No entra en el efectivo de tu caja.</p>
-              )}
 
               <Aviso tipo="error" texto={error} />
 
@@ -1169,10 +1166,10 @@ function CobrosDueno() {
   const [pestana, setPestana] = useState('Cuota')
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">Cobros</h1>
-        <p className="text-sm text-neutral-400">Para anotar lo que te pagan directo a vos.</p>
-      </div>
+      <h1 className="flex items-center gap-1 text-xl font-semibold">
+        Cobros
+        <Ayuda texto="Para anotar lo que te pagan directo a vos." />
+      </h1>
       <div className="rounded-xl border border-sky-900 bg-sky-950/40 px-4 py-3 text-sm text-sky-200">
         Lo que cobres acá queda registrado a tu nombre, fuera de la caja de los recepcionistas: no cambia el cierre de ningún turno.
         La caja y el kiosco los manejan los recepcionistas.
