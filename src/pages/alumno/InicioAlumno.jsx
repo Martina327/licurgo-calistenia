@@ -3,15 +3,32 @@ import { Link } from 'react-router-dom'
 import { linkWhatsApp, MENSAJES_WHATSAPP } from '../../lib/utils'
 import { useInicioAlumno } from '../../lib/useInicioAlumno'
 import {
-  fechasEntrenadas, fraseDelDia, mensajeSemana, mes, objetivoSemanal, rachaSemanas, semanaActual, semanas,
+  fechasEntrenadas, frasePara, mensajeSemana, mes, objetivoSemanal, rachaSemanas, semanaActual, semanas,
 } from '../../lib/racha'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import { Chevron, IconoCheck, IconoFuego, IconoWhatsApp } from '../../components/Iconos'
 
-// Fotos del gimnasio (public/img/gimnasio). Se muestra una por día y van pasando solas.
-export const FOTOS_GIMNASIO = ['pared-logo', 'sala', 'anilla-logo', 'anilla', 'espalderas', 'paralelas', 'anillas']
-  .map((n) => `/img/gimnasio/${n}.jpg`)
+// Fotos del gimnasio (public/img/gimnasio), sacadas por el productor audiovisual.
+// La primera es siempre el logo grande de la pared: es lo que se ve al abrir la app,
+// sola (sin frase encima, para que el logo se vea entero).
+// `pos` encuadra las verticales para que no se corte lo importante.
+export const FOTOS_GIMNASIO = [
+  { n: 'logo-pared', portada: true },
+  { n: 'sala' },
+  { n: 'anilla-logo' },
+  { n: 'paralelas-sala', pos: '50% 60%' },
+  { n: 'anillas', pos: '50% 65%' },
+  { n: 'anilla-logo-2' },
+  { n: 'logo-dips', pos: '50% 25%' },
+  { n: 'paralelas', pos: '50% 60%' },
+  { n: 'anillas-techo' },
+  { n: 'anillas-sogas', pos: '50% 70%' },
+  { n: 'anilla', pos: '50% 45%' },
+  { n: 'botella', pos: '50% 55%' },
+  { n: 'sala-dips', pos: '50% 55%' },
+  { n: 'logo-vertical', pos: '50% 20%' },
+].map(({ n, pos = '50% 50%', portada = false }) => ({ src: `/img/gimnasio/${n}.jpg`, pos, portada }))
 
 // Quién atiende el WhatsApp del gimnasio
 const CONTACTO = { nombre: 'Gero', foto: '/img/gero.jpg' }
@@ -90,10 +107,13 @@ export default function InicioAlumno() {
   )
 }
 
-// Foto del gimnasio con la frase del día. Pasan solas cada 6 s (no si el sistema pide menos movimiento).
+// Fotos del gimnasio con una frase cada una: pasan juntas cada 6 s
+// (quietas si el sistema pide menos movimiento). Siempre arranca por el logo, sin frase;
+// las frases se corren un lugar por día para que no sean siempre las mismas fotos con las mismas frases.
 function FotoFrase({ hoy }) {
-  const inicio = useMemo(() => Number(hoy.slice(8)) % FOTOS_GIMNASIO.length, [hoy])
-  const [i, setI] = useState(inicio)
+  const frases = useMemo(() => FOTOS_GIMNASIO.map((f, k) => (f.portada ? null : frasePara(hoy, k))), [hoy])
+  const [i, setI] = useState(0)
+  const portada = FOTOS_GIMNASIO[i].portada
   useEffect(() => {
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
     const t = setInterval(() => setI((x) => (x + 1) % FOTOS_GIMNASIO.length), 6000)
@@ -101,15 +121,22 @@ function FotoFrase({ hoy }) {
   }, [])
   return (
     <section className="relative h-56 overflow-hidden rounded-3xl bg-neutral-900">
-      {FOTOS_GIMNASIO.map((src, k) => (
-        <img key={src} src={src} alt="" aria-hidden loading={k === inicio ? 'eager' : 'lazy'}
+      {FOTOS_GIMNASIO.map(({ src, pos }, k) => (
+        <img key={src} src={src} alt="" aria-hidden loading={k < 2 ? 'eager' : 'lazy'} fetchPriority={k === 0 ? 'high' : 'auto'}
+          style={{ objectPosition: pos }}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${k === i ? 'opacity-100' : 'opacity-0'}`} />
       ))}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
-      <img src="/img/logo-licurgo.png" alt="Licurgo" className="absolute left-4 top-4 h-9 w-9 rounded-full ring-1 ring-white/20" />
-      <blockquote className="absolute inset-x-0 bottom-0 p-4">
-        <p className="text-lg font-semibold leading-snug text-white [text-wrap:balance]">“{fraseDelDia(hoy)}”</p>
-      </blockquote>
+      <div className={`absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent transition-opacity duration-1000 ${portada ? 'opacity-0' : 'opacity-100'}`} />
+      <img src="/img/logo-licurgo.png" alt="Licurgo"
+        className={`absolute left-4 top-4 h-9 w-9 rounded-full ring-1 ring-white/20 transition-opacity duration-1000 ${portada ? 'opacity-0' : 'opacity-100'}`} />
+      <div aria-live="polite">
+        {frases.map((f, k) => f && (
+          <blockquote key={k} aria-hidden={k !== i}
+            className={`absolute inset-x-0 bottom-0 p-4 transition-opacity duration-1000 ${k === i ? 'opacity-100' : 'opacity-0'}`}>
+            <p className="text-lg font-semibold leading-snug text-white [text-wrap:balance]">“{f}”</p>
+          </blockquote>
+        ))}
+      </div>
     </section>
   )
 }
@@ -160,7 +187,7 @@ function EntrenarHoy({ dia, hechoHoy, hayRutina }) {
     return <p className="rounded-2xl bg-neutral-900 px-4 py-3 text-sm text-neutral-400">Cuando tu coach te arme la rutina, vas a verla acá.</p>
   }
   return (
-    <Link to="/alumno/rutina" className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-neutral-950 active:bg-neutral-200">
+    <Link to={hechoHoy || !dia ? '/alumno/rutina' : `/alumno/rutina/dia/${dia.numero}`} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3.5 text-neutral-950 active:bg-neutral-200">
       <span className="min-w-0 flex-1">
         <span className="block text-xs font-semibold text-neutral-500">{hechoHoy ? 'Ya entrenaste hoy 💪' : 'Hoy te toca'}</span>
         <span className="block truncate text-lg font-bold">

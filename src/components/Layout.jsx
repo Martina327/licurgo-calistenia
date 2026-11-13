@@ -17,6 +17,7 @@ const MENU = {
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
     { to: '/recepcion/caja', texto: 'Cobros' },
     { to: '/recepcion/comprobantes', texto: 'Comprobantes', corto: 'Comprob.', contador: 'comprobantes' },
+    { to: '/recepcion/aptos', texto: 'Aptos', contador: 'aptos' },
     { to: '/coach', texto: 'Rutinas', end: true },
     { to: '/coach/plantillas', texto: 'Plantillas' },
     { to: '/coach/ejercicios', texto: 'Ejercicios' },
@@ -27,6 +28,7 @@ const MENU = {
     { to: '/recepcion/alumnos', texto: 'Alumnos' },
     { to: '/recepcion/caja', texto: 'Caja' },
     { to: '/recepcion/comprobantes', texto: 'Comprobantes', corto: 'Comprob.', contador: 'comprobantes' },
+    { to: '/recepcion/aptos', texto: 'Aptos', contador: 'aptos' },
   ],
   Coach: [
     { to: '/coach', texto: 'Alumnos y rutinas', corto: 'Alumnos', end: true },
@@ -45,13 +47,16 @@ export default function Layout() {
 function LayoutStaff() {
   const { perfil, cerrarSesion } = useAuth()
   const items = MENU[perfil.rol] ?? []
-  const pendientes = useComprobantesPendientes(items.some((i) => i.contador === 'comprobantes'))
+  // El coach arma rutinas desde la compu: en pantallas grandes el editor usa más ancho
+  const { pathname } = useLocation()
+  const ancho = pathname.startsWith('/coach') ? 'max-w-7xl' : 'max-w-5xl'
+  const pendientes = usePendientes(items.some((i) => i.contador))
 
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-neutral-800 bg-neutral-950/90 backdrop-blur">
         {/* Altura fija (56px + 1px de borde): la barra de progreso del alumno se pega justo debajo (top-[57px]) */}
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-4 sm:gap-4">
+        <div className={`mx-auto flex h-14 ${ancho} items-center gap-2 px-4 sm:gap-4`}>
           {/* En el celular se oculta la marca para que entre el menú completo */}
           <span className="hidden shrink-0 font-bold tracking-wide sm:inline">LICURGO</span>
           <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none]">
@@ -68,8 +73,8 @@ function LayoutStaff() {
               >
                 {/* En el celular, el nombre corto para que entre todo el menú */}
                 {i.corto ? <><span className="sm:hidden">{i.corto}</span><span className="hidden sm:inline">{i.texto}</span></> : i.texto}
-                {i.contador === 'comprobantes' && pendientes > 0 && (
-                  <span aria-label={`${pendientes} pendientes`} className="ml-1.5 rounded-full bg-amber-400 px-1.5 text-xs font-semibold text-neutral-950">{pendientes}</span>
+                {pendientes[i.contador] > 0 && (
+                  <span aria-label={`${pendientes[i.contador]} pendientes`} className="ml-1.5 rounded-full bg-amber-400 px-1.5 text-xs font-semibold text-neutral-950">{pendientes[i.contador]}</span>
                 )}
               </NavLink>
             ))}
@@ -86,7 +91,7 @@ function LayoutStaff() {
           </button>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">
+      <main className={`mx-auto ${ancho} px-4 py-6`}>
         <Outlet />
       </main>
       <InstalarApp />
@@ -94,17 +99,19 @@ function LayoutStaff() {
   )
 }
 
-// Comprobantes por revisar (B5): se vuelve a contar al cambiar de pantalla y al revisar uno
-function useComprobantesPendientes(activo) {
+// Comprobantes de pago y aptos médicos por revisar: se cuentan al cambiar de pantalla y al revisar uno
+const TABLAS_PENDIENTES = { comprobantes: 'comprobantes_pago', aptos: 'certificados_cargas' }
+function usePendientes(activo) {
   const { pathname } = useLocation()
-  const [n, setN] = useState(0)
+  const [n, setN] = useState({})
   useEffect(() => {
     if (!activo) return
     let cancelado = false
-    const contar = () => supabase.from('comprobantes_pago').select('id', { count: 'exact', head: true }).eq('estado', 'Pendiente')
-      .then(({ count }) => { if (!cancelado) setN(count ?? 0) })
+    const contar = () => Promise.all(Object.entries(TABLAS_PENDIENTES).map(([clave, tabla]) =>
+      supabase.from(tabla).select('id', { count: 'exact', head: true }).eq('estado', 'Pendiente').then(({ count }) => [clave, count ?? 0])))
+      .then((pares) => { if (!cancelado) setN(Object.fromEntries(pares)) })
     contar()
-    window.addEventListener('licurgo:comprobantes', contar) // la bandeja avisa cuando aprueba o rechaza
+    window.addEventListener('licurgo:comprobantes', contar) // las bandejas avisan cuando aprueban o rechazan
     return () => { cancelado = true; window.removeEventListener('licurgo:comprobantes', contar) }
   }, [activo, pathname])
   return n

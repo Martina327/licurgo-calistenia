@@ -7,7 +7,7 @@ import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import EstadoComprobante from '../../components/comprobantes/EstadoComprobante'
 
-const CAMPOS = 'id, alumno_id, archivo_path, monto_declarado, estado, motivo_rechazo, created_at, revisado_at, nombre, apellido, dni, telefono, fecha_vencimiento, precio_plan, estado_alumno, monto_acreditado, revisado_por_nombre'
+const CAMPOS = 'id, alumno_id, archivo_path, monto_declarado, estado, motivo_rechazo, created_at, revisado_at, nombre, apellido, dni, telefono, fecha_vencimiento, precio_plan, estado_alumno, monto_acreditado, revisado_por_nombre, cuenta_destino'
 const DURACION_LINK = 600 // segundos que vale el link firmado del archivo (bucket privado)
 
 const fechaHora = (iso) =>
@@ -198,6 +198,7 @@ function Detalle({ c, url, faltantes, onTerminado, onError }) {
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
           <dt className="text-neutral-400">Alumno</dt><dd>{c.nombre} {c.apellido} · DNI {c.dni}</dd>
           <dt className="text-neutral-400">Enviado</dt><dd>{fechaHora(c.created_at)}</dd>
+          {c.cuenta_destino && <><dt className="text-neutral-400">Transfirió a</dt><dd className="font-medium">{c.cuenta_destino}</dd></>}
           <dt className="text-neutral-400">Declara</dt>
           <dd>{c.monto_declarado ? formatearPesos(c.monto_declarado) : '—'}{montoDistinto && <span className="text-amber-300"> · la cuota es {formatearPesos(c.precio_plan)}</span>}</dd>
           <dt className="text-neutral-400">Vencimiento</dt><dd>{c.fecha_vencimiento ? formatearFecha(c.fecha_vencimiento) : 'Primer pago'}</dd>

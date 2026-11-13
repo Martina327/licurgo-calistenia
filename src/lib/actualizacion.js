@@ -21,7 +21,7 @@ const CADA = 5 * 60 * 1000
 const CLAVE_RECARGA = 'licurgo.recargado-para'
 
 // Pantallas donde recargar no pierde nada (solo se mira o se tilda; el checklist vive en localStorage)
-const RUTAS_SEGURAS = [/^\/$/, /^\/alumno$/, /^\/alumno\/rutina$/, /^\/alumno\/comprobantes$/, /^\/alumno\/mensualidad$/, /^\/coach$/, /^\/recepcion$/, /^\/admin$/, /^\/admin\/concurrencia$/]
+const RUTAS_SEGURAS = [/^\/$/, /^\/alumno$/, /^\/alumno\/rutina$/, /^\/alumno\/rutina\/dia\/\d+$/, /^\/alumno\/comprobantes$/, /^\/alumno\/mensualidad$/, /^\/coach$/, /^\/recepcion$/, /^\/admin$/, /^\/admin\/concurrencia$/]
 
 export const hayVersionNueva = (publicada, actual = VERSION_APP) =>
   Boolean(publicada) && actual !== 'dev' && publicada !== actual

@@ -63,7 +63,8 @@ export default function Mensualidad() {
       </Lista>
 
       <Lista titulo="Mi ficha">
-        <Fila Icono={IconoCorazon} colorIcono="bg-rose-500/15 text-rose-300" titulo="Apto médico" valor={membresia.estado_certificado} />
+        <Fila to="/alumno/apto" Icono={IconoCorazon} colorIcono="bg-rose-500/15 text-rose-300" titulo="Apto médico"
+          detalle={membresia.estado_certificado === 'Sin certificado' ? 'Subí tu apto médico' : 'Ver o subir uno nuevo'} valor={membresia.estado_certificado} />
       </Lista>
 
       <p className="px-1 text-center text-xs text-neutral-500">Tu asistencia la registra recepción cuando llegás al gimnasio.</p>

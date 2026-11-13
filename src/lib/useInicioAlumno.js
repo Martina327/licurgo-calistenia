@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
 import { hoyAR, mensajeError } from './utils'
 import { agruparPorDia } from './rutinas'
-import { leerChecklist } from './checklist'
+import { diaEmpezadoAntes, leerChecklist } from './checklist'
 import { diaQueToca, lunesDe } from './semana'
 
 const haceUnAnio = (hoy) => {
@@ -34,7 +34,12 @@ export function useInicioAlumno() {
       const rutinaId = r.data?.[0]?.rutina_id
       const completados = (c.data ?? []).filter((x) => x.rutina_id === rutinaId && x.fecha >= lunesDe(hoy))
       const toca = dias.length
-        ? diaQueToca({ dias: dias.map((d) => d.numero), completados, hoy, elegidoHoy: rutinaId ? leerChecklist(rutinaId, hoy).dia : null })
+        ? diaQueToca({
+          dias: dias.map((d) => d.numero),
+          completados: [...completados, ...[rutinaId && diaEmpezadoAntes(rutinaId, hoy)].filter(Boolean)],
+          hoy,
+          elegidoHoy: rutinaId ? leerChecklist(rutinaId, hoy).dia : null,
+        })
         : null
       setEstado({
         cargando: false,

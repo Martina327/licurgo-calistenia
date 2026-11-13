@@ -91,3 +91,12 @@ Sobre una base ya cargada se corren solo las migraciones, en orden:
 - `src/lib/secciones.js`: colores e íconos de cada sección y de los estados (alumno y coach)
 - `src/lib/checklist.js`: checklist diario del alumno (localStorage)
 - `src/components/rutinas/EditorRutina.jsx`: editor por días y bloques (rutina del alumno y plantillas)
+
+## Ajustes al editor del coach (12/11)
+
+- **Un solo botón "Guardar".** Antes había *Guardar cambios* (editaba la rutina activa) y *Guardar como nueva* (archivaba la activa y creaba otra), más *Archivar rutina*. Se quitaron los dos últimos: el coach siempre edita la rutina vigente del alumno y el historial de días completados se mantiene. Si el alumno no tiene rutina, *Guardar* la crea.
+- La barra de guardado queda fija abajo (*Cambios sin guardar* / *Todo guardado*), al alcance tanto en la compu como en el celular.
+- **Compu:** el editor usa todo el ancho y las observaciones del alumno quedan fijas a la derecha mientras se arma la rutina.
+- **Celular:** observaciones arriba y el editor abajo; en la lista de alumnos, el botón de observaciones es más grande para tocarlo en el gimnasio.
+
+![Editor en la compu](img/coach-editor-compu.png)

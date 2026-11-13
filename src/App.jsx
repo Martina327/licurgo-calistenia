@@ -18,6 +18,7 @@ import Mostrador from './pages/recepcion/Mostrador'
 import Alumnos from './pages/recepcion/Alumnos'
 import Caja from './pages/recepcion/Caja'
 import Comprobantes from './pages/recepcion/Comprobantes'
+import Aptos from './pages/recepcion/Aptos'
 import PanelCoach from './pages/coach/PanelCoach'
 import CatalogoEjercicios from './pages/coach/CatalogoEjercicios'
 import RutinaAlumno from './pages/coach/RutinaAlumno'
@@ -27,6 +28,7 @@ import InicioAlumno from './pages/alumno/InicioAlumno'
 import MiRutina from './pages/alumno/MiRutina'
 import PagarCuota from './pages/alumno/PagarCuota'
 import Mensualidad from './pages/alumno/Mensualidad'
+import AptoMedico from './pages/alumno/AptoMedico'
 import MisComprobantes from './pages/alumno/MisComprobantes'
 
 // "/" manda a cada uno a su pantalla de inicio según el rol (CU02)
@@ -61,6 +63,7 @@ export default function App() {
             <Route path="/recepcion/alumnos" element={<Alumnos />} />
             <Route path="/recepcion/caja" element={<Caja />} />
             <Route path="/recepcion/comprobantes" element={<Comprobantes />} />
+            <Route path="/recepcion/aptos" element={<Aptos />} />
           </Route>
           <Route element={<RutaProtegida roles={['Coach', 'SuperAdmin']} />}>
             <Route path="/coach" element={<PanelCoach />} />
@@ -72,8 +75,10 @@ export default function App() {
           <Route element={<RutaProtegida roles={['Alumno']} />}>
             <Route path="/alumno" element={<InicioAlumno />} />
             <Route path="/alumno/rutina" element={<MiRutina />} />
+            <Route path="/alumno/rutina/dia/:numero" element={<MiRutina />} />
             <Route path="/alumno/mensualidad" element={<Mensualidad />} />
             <Route path="/alumno/pagar" element={<PagarCuota />} />
+            <Route path="/alumno/apto" element={<AptoMedico />} />
             <Route path="/alumno/comprobantes" element={<MisComprobantes />} />
           </Route>
         </Route>

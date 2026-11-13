@@ -1,31 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
 import { TEXTO_VAMOS, agruparPorDia, nombreCadena, tareasDelDia, textoDescanso } from '../../lib/rutinas'
-import { alternarMarca, guardarChecklist, leerChecklist, sinMarcas } from '../../lib/checklist'
+import { alternarMarca, diaEmpezadoAntes, guardarChecklist, leerChecklist, sinMarcas } from '../../lib/checklist'
 import { completadosEnSemana, diaQueToca, lunesDe } from '../../lib/semana'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import { CADENA, estiloSeccion as estilo } from '../../lib/secciones'
 
 
-// La vista elegida (días en horizontal o lista desplegable) se recuerda en este celular
-const CLAVE_VISTA = 'licurgo.rutina.vista'
-const leerVista = () => { try { return localStorage.getItem(CLAVE_VISTA) === 'lista' ? 'lista' : 'dias' } catch { return 'dias' } }
-const guardarVista = (v) => { try { localStorage.setItem(CLAVE_VISTA, v) } catch { /* sin almacenamiento */ } }
-
 // CU11 – El alumno consulta su rutina activa y va tildando lo que hace en el día.
 // Un tilde por ejercicio, salvo:
 //   · Entrada en calor y Estiramientos → un tilde para toda la sección (se hacen de corrido)
 //   · Bi-series / tri-series           → un tilde para todo el bloque de ejercicios
-// La barra de progreso queda fija arriba al hacer scroll.
-// Dos vistas (botón arriba a la derecha): por días (chips horizontales, un día por vez)
-// o lista (los días uno debajo del otro; tocar uno lo despliega y tocarlo de nuevo lo minimiza).
+// Dos pantallas:
+//   · /alumno/rutina             → los días de la rutina uno debajo del otro
+//   · /alumno/rutina/dia/:numero → la pantalla del día con su checklist (se vuelve con "‹")
+// La barra de progreso del día queda fija arriba al hacer scroll.
 // El checklist se reinicia todos los días; al completar un día queda registrado en la semana
 // (tabla dias_completados) y al día siguiente se abre el próximo día pendiente.
 // Tocando ⓘ se ve la descripción del ejercicio y la observación del coach.
 // Las observaciones privadas del coach (lesiones, etc.) NO se muestran: son otra tabla.
 export default function MiRutina() {
+  const { numero } = useParams()
+  const navegar = useNavigate()
+  const [confirmarFin, setConfirmarFin] = useState(false)
+  const diaUrl = numero ? Number(numero) : null      // null = lista de días
   const [filas, setFilas] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
@@ -33,8 +34,6 @@ export default function MiRutina() {
   const [completados, setCompletados] = useState([]) // [{ numero_dia, fecha, creado }] desde el lunes
   const [diaVista, setDiaVista] = useState(null)     // día que se muestra en esta visita
   const cola = useRef(Promise.resolve())              // los cambios en la base salen de a uno, en orden
-  const [vista, setVista] = useState(leerVista)        // 'dias' (horizontal) o 'lista' (vertical, desplegable)
-  const [abierto, setAbierto] = useState(undefined)    // en la lista: día desplegado (undefined = el que toca hoy)
   const diaVistaInicial = useRef(null)                 // el día que tocaba al entrar
 
   useEffect(() => {
@@ -53,6 +52,7 @@ export default function MiRutina() {
           // Un día que quedó completo arranca sin tildes la próxima vez que se entra.
           // Si un día está a medio hacer (recargó en pleno entrenamiento), se conserva y se vuelve a abrir.
           const diasRutina = agruparPorDia(data)
+          const empezado = diaEmpezadoAntes(data[0].rutina_id, hoy) // a medias de otro día: no traba
           const guardado = leerChecklist(data[0].rutina_id, hoy)
           const tareasDe = (d) => tareasDelDia(d.items).map((t) => t.id)
           const completos = diasRutina.filter((d) => tareasDe(d).every((id) => guardado.marcados.includes(id)))
@@ -64,7 +64,7 @@ export default function MiRutina() {
           setCompletados(comp)
           const inicial = aMedias
             ? elegido.numero
-            : diaQueToca({ dias: diasRutina.map((d) => d.numero), completados: comp, hoy, elegidoHoy: guardado.dia })
+            : diaQueToca({ dias: diasRutina.map((d) => d.numero), completados: empezado ? [...comp, empezado] : comp, hoy, elegidoHoy: guardado.dia })
           diaVistaInicial.current = inicial
           setDiaVista(inicial)
         }
@@ -75,22 +75,33 @@ export default function MiRutina() {
   const dias = useMemo(() => agruparPorDia(filas), [filas])
   const rutina = filas[0]
   const hoy = hoyAR()
-  const diaActual = dias.find((d) => d.numero === diaVista) ?? dias[0]
+  const diaActual = dias.find((d) => d.numero === (diaUrl ?? diaVista)) ?? dias[0]
   const tareas = useMemo(() => (diaActual ? tareasDelDia(diaActual.items) : []), [diaActual])
   const hechosSemana = completadosEnSemana(completados, hoy)
   const completo = tareas.length > 0 && tareas.every((t) => check.marcados.includes(t.id))
   const registradoHoy = (n) => completados.some((c) => c.numero_dia === n && c.fecha === hoy)
+  // Un solo día de la rutina por fecha: si hoy ya hizo uno, los demás quedan para otro día
+  const diaDeHoy = completados.find((c) => c.fecha === hoy)?.numero_dia ?? null
+  const bloqueado = (n) => diaDeHoy !== null && diaDeHoy !== n
 
   // Día completo → queda hecho en la semana. Se revisa siempre (no solo al tildar), así no se pierde
   // si el pedido falló o si las marcas ya estaban.
-  useEffect(() => {
-    if (!rutina || !diaActual || !completo || registradoHoy(diaActual.numero)) return
-    const n = diaActual.numero
+  const registrar = (n) => {
+    if (registradoHoy(n) || bloqueado(n)) return
     setCompletados((cs) => [...cs, { numero_dia: n, fecha: hoy, creado: new Date().toISOString() }])
     cola.current = cola.current.then(async () => {
       const { error } = await supabase.from('dias_completados').insert({ rutina_id: rutina.rutina_id, numero_dia: n })
-      if (error && error.code !== '23505') setError(mensajeError(error))
+      if (error?.code === '23505') {
+        // Otro día ya quedó registrado hoy (por ejemplo, desde otro celular): se vuelve a leer la semana
+        const { data } = await supabase.from('dias_completados').select('numero_dia, fecha, creado')
+          .eq('rutina_id', rutina.rutina_id).gte('fecha', lunesDe(hoy)).order('creado')
+        if (data) setCompletados(data)
+      } else if (error) setError(mensajeError(error))
     })
+  }
+  useEffect(() => {
+    if (!rutina || !diaActual || !completo) return
+    registrar(diaActual.numero)
   }, [completo, diaActual?.numero]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Si destilda algo de un día que se registró hoy, se borra el registro de hoy
@@ -105,24 +116,25 @@ export default function MiRutina() {
     setCheck(nuevo)
     guardarChecklist(rutina.rutina_id, nuevo)
   }
-  const elegirDia = (numero, subir = true) => {
-    setDiaVista(numero)
-    actualizar({ ...check, fecha: hoyAR(), dia: numero })
-    if (subir) window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-  const cambiarVista = (v) => { setVista(v); guardarVista(v) }
-  // Lista: tocar un día lo despliega (y pasa a ser el día del checklist); tocarlo de nuevo lo minimiza
-  const alternarDia = (numero) => {
-    const abiertoAhora = abierto === undefined ? diaActual?.numero : abierto
-    if (abiertoAhora === numero) return setAbierto(null)
-    setAbierto(numero)
-    elegirDia(numero, false)
-    requestAnimationFrame(() => document.getElementById(`dia-${numero}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-  }
+  // Al abrir la pantalla de un día, ese pasa a ser el día del checklist de hoy
+  useEffect(() => {
+    if (!rutina || !diaUrl || check.dia === diaUrl || !dias.some((d) => d.numero === diaUrl) || bloqueado(diaUrl)) return
+    setDiaVista(diaUrl)
+    actualizar({ ...check, fecha: hoyAR(), dia: diaUrl })
+  }, [diaUrl, rutina?.rutina_id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const marcar = (id) => {
+    if (bloqueado(diaActual.numero)) return
     const quitando = check.marcados.includes(id)
     actualizar(alternarMarca({ ...check, fecha: hoyAR(), dia: diaActual.numero }, id))
     if (quitando) desregistrar(diaActual.numero)
+  }
+  // Finalizar a medias (se tiene que ir): el día queda hecho en la semana y mañana sigue el próximo
+  const finalizar = () => {
+    registrar(diaActual.numero)
+    actualizar({ ...check, fecha: hoyAR(), dia: null, marcados: check.marcados.filter((id) => !tareas.some((t) => t.id === id)) })
+    setConfirmarFin(false)
+    navegar('/alumno/rutina')
   }
   const reiniciar = () => {
     actualizar({ ...check, fecha: hoyAR(), dia: diaActual.numero, marcados: check.marcados.filter((id) => !tareas.some((t) => t.id === id)) })
@@ -143,19 +155,70 @@ export default function MiRutina() {
   const hecha = (t) => check.marcados.includes(t.id)
   const hechos = tareas.filter(hecha).length
   const yaHechoEstaSemana = hechosSemana.has(diaActual.numero) && !completo
+  const paraOtroDia = bloqueado(diaActual.numero)
   const bloques = [...new Set(tareas.map((t) => t.bloque))]
 
-  const barra = <BarraProgreso tareas={tareas} hecha={hecha} hechos={hechos} onReiniciar={reiniciar} />
-  const contenido = <ContenidoDia tareas={tareas} bloques={bloques} hecha={hecha} marcar={marcar} />
-  const diaAbierto = abierto === undefined ? diaActual.numero : abierto
+  // ----- Pantalla del día -----
+  if (diaUrl) {
+    if (!dias.some((d) => d.numero === diaUrl)) return <Navigate to="/alumno/rutina" replace />
+    return (
+      <div className="mx-auto max-w-md pb-10">
+        <header className="mb-3">
+          <p className="text-sm text-neutral-400">{rutina.rutina}</p>
+          <h1 className="text-2xl font-bold leading-tight text-white">Día {diaActual.numero}{diaActual.nombre && ` · ${diaActual.nombre}`}</h1>
+        </header>
+        <div className="sticky top-[57px] z-[5] -mx-4 mb-4 space-y-1.5 border-b border-neutral-800 bg-neutral-950/95 px-4 pb-3 pt-2.5 backdrop-blur">
+          {paraOtroDia ? (
+            <p className="text-sm text-neutral-300">
+              Hoy ya entrenaste el Día {diaDeHoy}. Este lo podés mirar, pero lo marcás otro día.
+            </p>
+          ) : (
+            <BarraProgreso tareas={tareas} hecha={hecha} hechos={hechos} onReiniciar={reiniciar} />
+          )}
+          {yaHechoEstaSemana && !paraOtroDia && <p className="text-xs text-neutral-400">✓ Este día ya lo hiciste esta semana.</p>}
+        </div>
+        <div className={paraOtroDia ? 'opacity-70' : ''}>
+          <ContenidoDia tareas={tareas} bloques={bloques} hecha={paraOtroDia ? () => false : hecha} marcar={marcar} />
+        </div>
+        {!paraOtroDia && !completo && hechos > 0 && !hechosSemana.has(diaActual.numero) && (
+          <div className="mt-6">
+            {confirmarFin ? (
+              <div className="space-y-3 rounded-2xl border border-neutral-700 bg-neutral-900 p-4">
+                <p className="font-semibold">¿Finalizar con {hechos} de {tareas.length}?</p>
+                <p className="text-sm text-neutral-400">El día queda registrado en tu semana y la próxima vez seguís con el día siguiente.</p>
+                <div className="flex gap-2">
+                  <button onClick={finalizar} className="flex-1 rounded-xl bg-white py-3 font-semibold text-neutral-950">Finalizar</button>
+                  <button onClick={() => setConfirmarFin(false)} className="flex-1 rounded-xl bg-neutral-800 py-3 font-semibold">Seguir entrenando</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmarFin(true)}
+                className="w-full rounded-xl border border-neutral-700 py-3 font-semibold text-neutral-200 active:bg-neutral-800">
+                Finalizar entrenamiento
+              </button>
+            )}
+          </div>
+        )}
+        {completo && (
+          <div className="mt-6 space-y-3 rounded-2xl bg-emerald-500/10 p-4 text-center">
+            <p className="text-lg font-bold text-emerald-200">¡Día completo! 💪</p>
+            <p className="text-sm text-emerald-100/80">Quedó registrado en tu semana.</p>
+            <Link to="/alumno/rutina" className="block rounded-xl bg-white py-3 font-semibold text-neutral-950">Volver a la rutina</Link>
+          </div>
+        )}
+      </div>
+    )
+  }
 
+  // ----- Lista de días -----
+  const marcadosDe = (d) => {
+    const ids = tareasDelDia(d.items).map((t) => t.id)
+    return { total: ids.length, hechas: check.dia === d.numero ? ids.filter((id) => check.marcados.includes(id)).length : 0 }
+  }
   return (
     <div className="mx-auto max-w-md pb-10">
-      <header className="mb-3">
-        <div className="flex items-start justify-between gap-3">
-          <h1 className="text-2xl font-bold leading-tight text-white">{rutina.rutina}</h1>
-          {dias.length > 1 && <SelectorVista vista={vista} onCambiar={cambiarVista} />}
-        </div>
+      <header className="mb-4">
+        <h1 className="text-2xl font-bold leading-tight text-white">{rutina.rutina}</h1>
         {rutina.objetivo && <p className="mt-1 text-[15px] text-neutral-200">🎯 {rutina.objetivo}</p>}
         <p className="mt-1 text-xs text-neutral-400">Actualizada el {formatearFecha(rutina.fecha_actualizacion)}</p>
         {dias.length > 1 && (
@@ -163,93 +226,40 @@ export default function MiRutina() {
             {hechosSemana.size >= dias.length
               ? '🎉 Completaste todos los días de esta semana.'
               : `Esta semana: ${hechosSemana.size} de ${dias.length} días hechos.`}
+            {diaDeHoy !== null && hechosSemana.size < dias.length && ' Hoy ya entrenaste: mañana seguís con el próximo.'}
           </p>
         )}
       </header>
 
-      {vista === 'lista' && dias.length > 1 ? (
-        // Vista vertical: los días uno debajo del otro; tocar despliega o minimiza
-        <div className="space-y-3">
-          {dias.map((d) => {
-            const desplegado = diaAbierto === d.numero
-            const hecho = hechosSemana.has(d.numero)
-            const cantidad = tareasDelDia(d.items).length
-            return (
-              <section key={d.numero} id={`dia-${d.numero}`} className="scroll-mt-16 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60">
-                <button onClick={() => alternarDia(d.numero)} aria-expanded={desplegado}
-                  className="flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-neutral-800">
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                    hecho ? 'bg-emerald-500/15 text-emerald-300' : desplegado ? 'bg-white text-neutral-950' : 'bg-neutral-800 text-neutral-200'}`}>
-                    {hecho ? '✓' : d.numero}
+      <ul className="space-y-3">
+        {dias.map((d) => {
+          const hecho = hechosSemana.has(d.numero)
+          const { total, hechas } = marcadosDe(d)
+          const enCurso = hechas > 0 && hechas < total
+          const toca = !hecho && diaDeHoy === null && d.numero === diaVistaInicial.current
+          return (
+            <li key={d.numero}>
+              <Link to={`/alumno/rutina/dia/${d.numero}`}
+                className={`flex items-center gap-3 rounded-2xl border px-4 py-4 active:bg-neutral-800 ${
+                  toca || enCurso ? 'border-neutral-600 bg-neutral-900' : 'border-neutral-800 bg-neutral-900/60'}`}>
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                  hecho ? 'bg-emerald-500/15 text-emerald-300' : toca || enCurso ? 'bg-white text-neutral-950' : 'bg-neutral-800 text-neutral-200'}`}>
+                  {hecho ? '✓' : d.numero}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">Día {d.numero}{d.nombre && ` · ${d.nombre}`}</span>
+                  <span className="block text-sm text-neutral-400">
+                    {total} {total === 1 ? 'tarea' : 'tareas'}
+                    {hecho ? ' · hecho esta semana' : enCurso ? ` · en curso ${hechas}/${total}` : toca ? ' · hoy te toca' : ''}
                   </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">Día {d.numero}{d.nombre && ` · ${d.nombre}`}</span>
-                    <span className="block text-sm text-neutral-400">
-                      {cantidad} {cantidad === 1 ? 'tarea' : 'tareas'}
-                      {hecho ? ' · hecho esta semana' : d.numero === diaVistaInicial.current ? ' · hoy te toca' : ''}
-                    </span>
-                  </span>
-                  <span aria-hidden className={`text-neutral-500 transition-transform ${desplegado ? 'rotate-90' : ''}`}>›</span>
-                </button>
-                {desplegado && (
-                  <div className="border-t border-neutral-800 px-3 pb-3">
-                    <div className="sticky top-[57px] z-[5] -mx-3 mb-3 border-b border-neutral-800 bg-neutral-950/95 px-3 pb-2.5 pt-2.5 backdrop-blur">
-                      {barra}
-                      {yaHechoEstaSemana && <p className="mt-1.5 text-xs text-neutral-400">✓ Este día ya lo hiciste esta semana.</p>}
-                    </div>
-                    {contenido}
-                  </div>
-                )}
-              </section>
-            )
-          })}
-        </div>
-      ) : (
-        <>
-          {/* Vista por días: fija debajo del menú, días + progreso siempre a la vista */}
-          <div className="sticky top-[57px] z-[5] -mx-4 mb-4 space-y-2.5 border-b border-neutral-800 bg-neutral-950/95 px-4 pb-3 pt-2 backdrop-blur">
-            {dias.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto [scrollbar-width:none]">
-                {dias.map((d) => {
-                  const activo = d.numero === diaActual.numero
-                  const hecho = hechosSemana.has(d.numero)
-                  return (
-                    <button key={d.numero} onClick={() => elegirDia(d.numero)} aria-pressed={activo}
-                      title={hecho ? 'Ya lo hiciste esta semana' : undefined}
-                      className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                        activo ? 'bg-white text-neutral-950' : 'bg-neutral-800 text-neutral-200 hover:bg-neutral-700'
-                      }`}>
-                      {hecho && <span aria-label="hecho esta semana" className={activo ? 'text-emerald-600' : 'text-emerald-400'}>✓ </span>}
-                      Día {d.numero}{d.nombre && ` · ${d.nombre}`}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-            {barra}
-            {yaHechoEstaSemana && <p className="text-xs text-neutral-400">✓ Este día ya lo hiciste esta semana.</p>}
-          </div>
-          {contenido}
-        </>
-      )}
-    </div>
-  )
-}
-
-// Botón para cambiar la vista: días en horizontal (uno por vez) o en lista desplegable
-function SelectorVista({ vista, onCambiar }) {
-  const op = [
-    { id: 'dias', texto: 'Ver por días', icono: <><rect x="3" y="7" width="5" height="10" rx="1.5" /><rect x="10" y="7" width="5" height="10" rx="1.5" /><rect x="17" y="7" width="4" height="10" rx="1.5" /></> },
-    { id: 'lista', texto: 'Ver como lista', icono: <><rect x="3" y="4" width="18" height="4" rx="1.5" /><rect x="3" y="10" width="18" height="4" rx="1.5" /><rect x="3" y="16" width="18" height="4" rx="1.5" /></> },
-  ]
-  return (
-    <div className="flex shrink-0 rounded-full bg-neutral-800 p-1" role="group" aria-label="Vista de la rutina">
-      {op.map((o) => (
-        <button key={o.id} onClick={() => onCambiar(o.id)} aria-pressed={vista === o.id} aria-label={o.texto} title={o.texto}
-          className={`flex h-8 w-9 items-center justify-center rounded-full transition-colors ${vista === o.id ? 'bg-white text-neutral-950' : 'text-neutral-400'}`}>
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>{o.icono}</svg>
-        </button>
-      ))}
+                </span>
+                {toca && !enCurso && <span className="shrink-0 rounded-full bg-red-600 px-3 py-1 text-xs font-bold text-white">Hoy</span>}
+                <span aria-hidden className="shrink-0 text-xl text-neutral-500">›</span>
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }

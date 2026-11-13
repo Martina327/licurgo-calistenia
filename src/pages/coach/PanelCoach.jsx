@@ -116,8 +116,8 @@ export default function PanelCoach() {
                 )}
                 <Link
                   to={`/coach/alumnos/${a.alumno_id}/observaciones`}
-                  className={`rounded-full px-2 py-0.5 ${
-                    a.observaciones > 0 ? 'bg-amber-950 text-amber-300 hover:bg-amber-900' : 'px-0.5 text-neutral-400 underline-offset-2 hover:text-white hover:underline'
+                  className={`rounded-full px-2.5 py-1 sm:px-2 sm:py-0.5 ${
+                    a.observaciones > 0 ? 'bg-amber-950 text-amber-300 hover:bg-amber-900' : 'border border-neutral-700 text-neutral-300 sm:border-0 sm:px-0.5 text-neutral-400 underline-offset-2 hover:text-white hover:underline'
                   }`}
                 >
                   {a.observaciones > 0 ? `⚠ ${a.observaciones} observaci${a.observaciones > 1 ? 'ones' : 'ón'}` : 'Observaciones'}

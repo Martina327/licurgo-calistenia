@@ -60,3 +60,16 @@ export function limpiarChecklists(storage = globalThis.localStorage) {
     // sin almacenamiento disponible: nada que borrar
   }
 }
+
+// Día que quedó empezado un día anterior y no se terminó ni se finalizó.
+// Para que el alumno no quede trabado, al día siguiente se cuenta como hecho al elegir
+// qué día toca (se sigue con el próximo). Devuelve { numero_dia, fecha, creado } o null.
+export function diaEmpezadoAntes(rutinaId, hoy, storage = globalThis.localStorage) {
+  try {
+    const g = JSON.parse(storage.getItem(PREFIJO + rutinaId) ?? 'null')
+    if (!g || g.fecha === hoy || g.dia == null || !g.marcados?.length) return null
+    return { numero_dia: g.dia, fecha: g.fecha, creado: `${g.fecha}T23:59:59` }
+  } catch {
+    return null
+  }
+}
