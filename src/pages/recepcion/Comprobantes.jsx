@@ -211,7 +211,7 @@ function Detalle({ c, url, faltantes, onTerminado, onError }) {
         {fichaIncompleta && (
           <div className="rounded-lg bg-amber-950/70 px-3 py-2 text-amber-200">
             Es su primer pago y le falta completar la ficha ({faltantes.join(', ')}).{' '}
-            <Link to={`/recepcion/alumnos?editar=${c.alumno_id}`} className="font-semibold underline">Completar ficha</Link> y después aprobá.
+            <Link to={`/recepcion/alumnos/${c.alumno_id}?editar=1`} className="font-semibold underline">Completar ficha</Link> y después aprobá.
           </div>
         )}
 

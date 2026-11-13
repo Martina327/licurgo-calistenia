@@ -1,25 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import { esDniValido, formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
+import { esDniValido, hoyAR, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import CampoFecha from '../../components/CampoFecha'
 import { EtiquetaAlumno, EtiquetaUnica } from '../../components/EtiquetaEstado'
-import Ayuda from '../../components/Ayuda'
-import { IconoLapiz } from '../../components/Iconos'
+import { Chevron, IconoBuscar } from '../../components/Iconos'
 
 // Gestión de alumnos (CU01 · A1). Recepción y SuperAdmin.
-//   · Listado con el estado del alumno y de la cuota, buscador y filtro.
+//   · Buscador y filtros; la ficha de cada alumno está en FichaAlumno.jsx.
 //   · Alta rápida de clase de prueba: nombre, apellido, DNI, celular y email.
 //     El alumno entra con su DNI como usuario y clave (cambio obligatorio al primer ingreso).
 //   · Edición de datos y baja lógica (editar_alumno, dar_baja_alumno).
 //     Ficha completa (nacimiento, domicilio, contacto de emergencia): obligatoria
 //     para pagar la primera cuota; la base lo controla en _extender_membresia.
-//   · Dados de baja: listado aparte con opción de reactivar (reactivar_alumno).
-const FILTROS = ['Todos', 'En clase de prueba', 'Activo', 'Inactivo', 'Pase libre', 'Dados de baja']
+//   · Dados de baja: filtro aparte; se reactivan desde la ficha (reactivar_alumno).
+const FILTROS = ['En clase de prueba', 'Activo', 'Inactivo', 'Pase libre', 'Dados de baja']
 
+// Pantalla de Alumnos: solo el buscador (y los filtros). La lista aparece al buscar o al elegir
+// un filtro; tocar un alumno abre su ficha completa (/recepcion/alumnos/:id).
 export default function Alumnos() {
   const [alumnos, setAlumnos] = useState([])
   const [bajas, setBajas] = useState([])
@@ -29,11 +30,11 @@ export default function Alumnos() {
   // ?filtro=Activo: llega desde las tarjetas del Inicio del dueño
   const [filtro, setFiltro] = useState(() => {
     const f = new URLSearchParams(window.location.search).get('filtro')
-    return FILTROS.includes(f) ? f : 'Todos'
+    return FILTROS.includes(f) ? f : null
   })
   const [mostrarAlta, setMostrarAlta] = useState(false)
-  const [editando, setEditando] = useState(null) // fila del alumno que se está editando
   const [avisoOk, setAvisoOk] = useState('')
+  const ir = useNavigate()
 
   const cargar = useCallback(async () => {
     const [m, b] = await Promise.all([
@@ -46,7 +47,7 @@ export default function Alumnos() {
     const err = m.error ?? b.error
     setError(err ? mensajeError(err) : '')
     setAlumnos(m.data ?? [])
-    setBajas(b.data ?? [])
+    setBajas((b.data ?? []).map((a) => ({ ...a, deBaja: true })))
     setCargando(false)
   }, [])
 
@@ -55,74 +56,43 @@ export default function Alumnos() {
   }, [cargar])
 
   // ?editar=<alumno_id>: llega desde Comprobantes (B5) para completar la ficha antes del primer pago
-  const [params, setParams] = useSearchParams()
+  const [params] = useSearchParams()
   const editarId = params.get('editar')
   useEffect(() => {
-    if (!editarId || cargando) return
-    const alumno = alumnos.find((a) => a.alumno_id === editarId)
-    if (alumno) setEditando(alumno)
-    setParams({}, { replace: true })
-  }, [editarId, cargando, alumnos, setParams])
-
-  const terminar = async (texto) => {
-    setMostrarAlta(false)
-    setEditando(null)
-    setAvisoOk(texto)
-    await cargar()
-  }
-
-  const abrirAlta = () => {
-    setEditando(null)
-    setAvisoOk('')
-    setMostrarAlta(true)
-  }
-
-  const abrirEdicion = (alumno) => {
-    setMostrarAlta(false)
-    setAvisoOk('')
-    setEditando(alumno)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  const reactivar = async (alumno) => {
-    setError('')
-    const { error } = await supabase.rpc('reactivar_alumno', { p_alumno_id: alumno.alumno_id })
-    if (error) return setError(mensajeError(error))
-    await terminar(`${alumno.nombre} ${alumno.apellido} volvió a estar activo en el sistema.`)
-  }
+    if (editarId) ir(`/recepcion/alumnos/${editarId}?editar=1`, { replace: true })
+  }, [editarId, ir])
 
   // Cantidad por estado, para mostrar en cada filtro
   const conteo = useMemo(() => {
-    const c = { Todos: alumnos.length, 'Dados de baja': bajas.length }
+    const c = { 'Dados de baja': bajas.length }
     for (const a of alumnos) c[a.estado_alumno] = (c[a.estado_alumno] ?? 0) + 1
     c['Pase libre'] = alumnos.filter((a) => a.pase_libre).length
     return c
   }, [alumnos, bajas])
 
-  const coincide = useCallback((a) => {
-    const q = busqueda.trim().toLowerCase()
-    if (!q) return true
-    const qDni = q.replace(/[.\s]/g, '') // acepta el DNI con puntos: 45.666.777
-    return (qDni && a.dni.includes(qDni)) || `${a.nombre} ${a.apellido}`.toLowerCase().includes(q)
-  }, [busqueda])
+  const q = busqueda.trim().toLowerCase()
+  const qDni = q.replace(/[.\s]/g, '') // acepta el DNI con puntos: 45.666.777
+  const esDni = /^\d+$/.test(qDni)
+  const corta = esDni ? qDni.length < 3 : q.length < 2
+  const coincide = (a) =>
+    !q || (esDni ? a.dni.includes(qDni) : `${a.nombre} ${a.apellido}`.toLowerCase().includes(q) || `${a.apellido} ${a.nombre}`.toLowerCase().includes(q))
 
-  const visibles = useMemo(
-    () =>
-      alumnos.filter(
-        (a) => (filtro === 'Todos' || (filtro === 'Pase libre' ? a.pase_libre : a.estado_alumno === filtro)) && coincide(a),
-      ),
-    [alumnos, filtro, coincide],
-  )
-  const bajasVisibles = useMemo(() => bajas.filter(coincide), [bajas, coincide])
+  const mostrar = Boolean(filtro) || (q && !corta)
+  const visibles = !mostrar ? [] : (
+    filtro === 'Dados de baja' ? bajas
+    : filtro === 'Pase libre' ? alumnos.filter((a) => a.pase_libre)
+    : filtro ? alumnos.filter((a) => a.estado_alumno === filtro)
+    : [...alumnos, ...bajas]
+  ).filter(coincide)
 
   if (cargando) return <Cargando />
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Alumnos</h1>
-        {!mostrarAlta && !editando && (
-          <button onClick={abrirAlta} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950">
+        {!mostrarAlta && (
+          <button onClick={() => { setAvisoOk(''); setMostrarAlta(true) }} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950">
             + Clase de prueba
           </button>
         )}
@@ -131,34 +101,38 @@ export default function Alumnos() {
       {mostrarAlta && (
         <AltaClasePrueba
           alCancelar={() => setMostrarAlta(false)}
-          alGuardar={(d) => terminar(`${d.nombre} ${d.apellido} quedó registrado en clase de prueba. Entra a la app con su DNI como usuario y como clave.`)}
-        />
-      )}
-
-      {editando && (
-        <EditarAlumno
-          key={editando.alumno_id}
-          alumno={editando}
-          alCancelar={() => setEditando(null)}
-          alTerminar={terminar}
+          alGuardar={async (d) => {
+            setMostrarAlta(false)
+            setAvisoOk(`${d.nombre} ${d.apellido} quedó registrado en clase de prueba. Entra a la app con su DNI como usuario y como clave.`)
+            await cargar()
+          }}
         />
       )}
 
       <Aviso tipo="ok" texto={avisoOk} />
       <Aviso tipo="error" texto={error} />
 
-      <input
-        value={busqueda}
-        onChange={(e) => setBusqueda(e.target.value)}
-        placeholder="Buscar por DNI o nombre"
-        className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-neutral-400"
-      />
+      <div className="flex items-center gap-2 rounded-xl border border-neutral-700 bg-neutral-900 px-4 focus-within:border-neutral-400">
+        <IconoBuscar className="h-5 w-5 shrink-0 text-neutral-500" />
+        <input
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Buscar por DNI o nombre"
+          inputMode="search"
+          autoComplete="off"
+          autoFocus
+          className="w-full bg-transparent py-3 text-lg outline-none"
+        />
+        {busqueda && (
+          <button onClick={() => setBusqueda('')} className="text-neutral-500 hover:text-white" aria-label="Borrar búsqueda">✕</button>
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-2">
         {FILTROS.map((f) => (
           <button
             key={f}
-            onClick={() => setFiltro(f)}
+            onClick={() => setFiltro(filtro === f ? null : f)}
             className={`rounded-full border px-3 py-1 text-sm ${
               filtro === f ? 'border-white bg-white text-neutral-950' : 'border-neutral-700 text-neutral-300 hover:bg-neutral-900'
             }`}
@@ -168,63 +142,37 @@ export default function Alumnos() {
         ))}
       </div>
 
-      {filtro === 'Dados de baja' ? (
-        <TablaBajas bajas={bajasVisibles} alReactivar={reactivar} />
-      ) : visibles.length === 0 ? (
-        <p className="text-sm text-neutral-400">No hay alumnos que coincidan.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-neutral-800">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-900 text-left text-neutral-400">
-              <tr>
-                <th className="px-3 py-2">Alumno</th>
-                <th className="px-3 py-2">DNI</th>
-                <th className="px-3 py-2">Celular</th>
-                <th className="px-3 py-2">Estado</th>
-                <th className="px-3 py-2">Vence</th>
-                <th className="px-3 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibles.map((a) => (
-                <tr key={a.alumno_id} className="border-t border-neutral-800">
-                  <td className="px-3 py-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{a.apellido}, {a.nombre}</span>
-                      {a.datos_faltantes?.length > 0 && (
-                        <Ayuda
-                          texto={`Falta cargar: ${a.datos_faltantes.join(', ')}. Se completa con el lápiz.`}
-                          className="rounded-full border border-amber-800 px-2 py-0.5 text-[11px] font-medium text-amber-400 hover:bg-amber-950"
-                        >
-                          Falta info
-                        </Ayuda>
-                      )}
-                    </div>
-                    {a.pase_libre && a.pase_libre_motivo && <div className="text-xs text-sky-300/80">{a.pase_libre_motivo}</div>}
-                  </td>
-                  <td className="px-3 py-2">{a.dni}</td>
-                  <td className="px-3 py-2">{a.telefono ?? '—'}</td>
-                  <td className="px-3 py-2"><EtiquetaUnica alumno={a} /></td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {a.estado_alumno === 'En clase de prueba'
-                      ? <span className="text-neutral-500">Prueba el {formatearFecha(a.fecha_clase_prueba)}</span>
-                      : formatearFecha(a.fecha_vencimiento)}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      onClick={() => abrirEdicion(a)}
-                      aria-label={`Editar a ${a.nombre} ${a.apellido}`}
-                      title="Editar"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 text-white hover:bg-neutral-800"
-                    >
-                      <IconoLapiz className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {q && corta && !filtro ? (
+        <p className="px-1 text-sm text-neutral-500">{esDni ? 'Escribí al menos 3 números del DNI.' : 'Escribí al menos 2 letras del nombre.'}</p>
+      ) : mostrar && visibles.length === 0 ? (
+        <p className="px-1 text-sm text-neutral-500">No hay alumnos que coincidan.</p>
+      ) : visibles.length > 0 && (
+        <ul className="divide-y divide-neutral-800 overflow-hidden rounded-xl border border-neutral-800">
+          {visibles.map((a) => (
+            <li key={a.alumno_id}>
+              <button
+                onClick={() => ir(`/recepcion/alumnos/${a.alumno_id}`)}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-neutral-900"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-2">
+                    <span className={`font-medium ${a.deBaja ? 'text-neutral-400' : ''}`}>{a.apellido}, {a.nombre}</span>
+                    {a.datos_faltantes?.length > 0 && (
+                      <span className="rounded-full border border-amber-800 px-2 py-0.5 text-[11px] font-medium text-amber-400">Falta info</span>
+                    )}
+                  </p>
+                  <p className="text-sm text-neutral-500">DNI {a.dni}</p>
+                </div>
+                {a.deBaja ? (
+                  <span className="rounded-full bg-neutral-800 px-2.5 py-0.5 text-xs text-neutral-400">Dado de baja</span>
+                ) : (
+                  <EtiquetaUnica alumno={a} />
+                )}
+                <Chevron className="h-4 w-4 shrink-0 text-neutral-600" />
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   )
@@ -317,7 +265,7 @@ function AltaClasePrueba({ alCancelar, alGuardar }) {
 // ---------------------------------------------------------------
 // Edición y baja lógica (CU01)
 // ---------------------------------------------------------------
-function EditarAlumno({ alumno, alCancelar, alTerminar }) {
+export function EditarAlumno({ alumno, alCancelar, alTerminar }) {
   const [datos, setDatos] = useState(null)
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -487,43 +435,6 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
         </div>
       )}
     </form>
-  )
-}
-
-// ---------------------------------------------------------------
-// Dados de baja (con opción de reactivar)
-// ---------------------------------------------------------------
-function TablaBajas({ bajas, alReactivar }) {
-  if (bajas.length === 0) return <p className="text-sm text-neutral-400">No hay alumnos dados de baja.</p>
-  return (
-    <div className="overflow-x-auto rounded-xl border border-neutral-800">
-      <table className="w-full text-sm">
-        <thead className="bg-neutral-900 text-left text-neutral-400">
-          <tr>
-            <th className="px-3 py-2">Alumno</th>
-            <th className="px-3 py-2">DNI</th>
-            <th className="px-3 py-2">Celular</th>
-            <th className="px-3 py-2">Último vencimiento</th>
-            <th className="px-3 py-2"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {bajas.map((a) => (
-            <tr key={a.alumno_id} className="border-t border-neutral-800 text-neutral-400">
-              <td className="px-3 py-2 font-medium text-neutral-200">{a.apellido}, {a.nombre}</td>
-              <td className="px-3 py-2">{a.dni}</td>
-              <td className="px-3 py-2">{a.telefono ?? '—'}</td>
-              <td className="px-3 py-2">{formatearFecha(a.fecha_vencimiento)}</td>
-              <td className="px-3 py-2 text-right">
-                <button onClick={() => alReactivar(a)} className="text-emerald-400 hover:underline">
-                  Reactivar
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   )
 }
 
