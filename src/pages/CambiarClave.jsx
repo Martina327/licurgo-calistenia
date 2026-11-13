@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { INICIO_POR_ROL } from '../lib/utils'
 import Cargando from '../components/Cargando'
 import Aviso from '../components/Aviso'
+import CampoClave from '../components/CampoClave'
 
 // CU02 · Cambio de clave obligatorio en el primer ingreso.
 // El alumno se da de alta con su DNI como clave inicial (alta_clase_prueba).
@@ -61,13 +62,13 @@ export default function CambiarClave() {
 
         <label className="block space-y-1">
           <span className="text-sm text-neutral-300">Clave nueva</span>
-          <input type="password" autoComplete="new-password" value={nueva} onChange={(e) => setNueva(e.target.value)} className={campo} autoFocus />
+          <CampoClave autoComplete="new-password" value={nueva} onChange={(e) => setNueva(e.target.value)} className={campo} autoFocus />
           <span className="text-xs text-neutral-500">Mínimo {MINIMO} caracteres.{perfil.rol === 'Alumno' ? ' No puede ser tu DNI.' : ''}</span>
         </label>
 
         <label className="block space-y-1">
           <span className="text-sm text-neutral-300">Repetí la clave nueva</span>
-          <input type="password" autoComplete="new-password" value={repetida} onChange={(e) => setRepetida(e.target.value)} className={campo} />
+          <CampoClave autoComplete="new-password" value={repetida} onChange={(e) => setRepetida(e.target.value)} className={campo} />
         </label>
 
         <Aviso tipo="error" texto={error} />

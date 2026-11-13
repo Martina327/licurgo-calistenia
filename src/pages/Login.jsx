@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import CampoClave from '../components/CampoClave'
 import { esDniValido, INICIO_POR_ROL } from '../lib/utils'
 
 // CU02 – Autenticarse: alumnos con DNI, personal con email (A6)
@@ -58,12 +59,12 @@ export default function Login() {
 
         <label className="block">
           <span className="text-sm text-neutral-300">Contraseña</span>
-          <input
-            type="password"
+          <CampoClave
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2.5 outline-none focus:border-neutral-400"
+            contenedor="mt-1"
+            className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2.5 outline-none focus:border-neutral-400"
           />
         </label>
 
