@@ -5,6 +5,7 @@ import { buscarParaCheckin, faltaParaBuscar, horaAR, situacionCheckin, tienePase
 import { Link } from 'react-router-dom'
 import Cargando from '../../components/Cargando'
 import Ayuda from '../../components/Ayuda'
+import AvisoCumple from '../../components/AvisoCumple'
 import { Chevron, IconoMostrador } from '../../components/Iconos'
 
 // Mostrador de recepción:
@@ -37,6 +38,7 @@ export default function Mostrador() {
 
   return (
     <div className="space-y-8">
+      <AvisoCumple />
       <CheckIn alumnos={alumnos} />
       <Invitaciones invitaciones={invitaciones} alRegistrar={cargar} />
       <Alertas alertas={alertas} />

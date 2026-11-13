@@ -118,6 +118,8 @@ export const MENSAJES_WHATSAPP = {
     dias < 0
       ? `Hola ${nombre}, te escribimos de Licurgo Calistenia. Tu cuota venció hace ${Math.abs(dias)} día(s). Podés abonarla en recepción o subir el comprobante de transferencia en la app.`
       : `Hola ${nombre}, te escribimos de Licurgo Calistenia. Tu cuota vence ${dias === 0 ? 'hoy' : `en ${dias} día(s)`}. Podés abonarla en recepción o subir el comprobante de transferencia en la app.`,
+  cumple: (nombre) =>
+    `¡Feliz cumple, ${nombre}! 🎉 Todo el equipo de Licurgo Calistenia te desea un día buenísimo. ¡Te esperamos para festejarlo entrenando! 💪`,
   certificado: (nombre) =>
     `Hola ${nombre}, te escribimos de Licurgo Calistenia. Necesitamos que cargues tu certificado de aptitud física actualizado.`,
   'Clase de prueba': (nombre) =>

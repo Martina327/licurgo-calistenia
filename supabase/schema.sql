@@ -26,13 +26,13 @@ DROP TRIGGER IF EXISTS trg_nuevo_usuario_auth ON auth.users;
 DROP VIEW IF EXISTS public.v_rutina_activa, public.v_membresias, public.v_alertas,
                     public.v_invitaciones_pendientes,
                     public.v_ingresos_diarios, public.v_concurrencia,
-                    public.v_rutina_alumno, public.v_alumnos_baja, public.v_cierres_caja, public.v_personal, public.v_movimientos CASCADE;
+                    public.v_rutina_alumno, public.v_alumnos_baja, public.v_cierres_caja, public.v_personal, public.v_movimientos, public.v_cumpleanos_hoy CASCADE;
 
 DROP TABLE IF EXISTS
     -- esquema v1 (modulo_coach.sql)
     public.fichas_observaciones, public.item_ejercicio, public.rutina_dia,
     -- esquema v2
-    public.configuracion_admin, public.pase_libre_historial, public.certificados_cargas, public.datos_cobro, public.dias_completados, public.rutinas_plantilla, public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
+    public.saludos_cumple, public.configuracion_admin, public.pase_libre_historial, public.certificados_cargas, public.datos_cobro, public.dias_completados, public.rutinas_plantilla, public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
     public.ejercicios, public.invitaciones_retomar, public.asistencias, public.ingresos, public.venta_items,
     public.ventas, public.productos, public.espacios_alquiler, public.turnos_caja,
     public.comprobantes_pago, public.certificados_aptos, public.alumnos,
@@ -56,7 +56,7 @@ DROP FUNCTION IF EXISTS public.fn_set_fecha_actualizacion, public.fn_validar_rol
     public._plan_unico, public.marcar_clave_cambiada, public.alta_clase_prueba,
     public._alumno_existente, public.editar_alumno, public.dar_baja_alumno,
     public.reactivar_alumno, public._normalizar_email, public._datos_faltantes,
-    public.cargar_stock, public.ajustar_stock, public.registrar_pago_cuota, public.marcar_cierre_revisado,
+    public.cargar_stock, public.ajustar_stock, public.registrar_saludo_cumple, public.registrar_pago_cuota, public.marcar_cierre_revisado,
     -- Pareja A · A6
     public._generar_clave, public._personal_editable, public.alta_personal, public.editar_personal,
     public.cambiar_estado_personal, public.restablecer_clave_personal,
@@ -3908,6 +3908,71 @@ LEFT JOIN public.ingresos i ON i.comprobante_id = c.id
 LEFT JOIN public.usuarios r ON r.id = c.revisado_por;
 
 GRANT SELECT ON public.v_comprobantes TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 19.27 PAREJA A · MOSTRADOR: AVISO DE CUMPLEAÑOS (migración 20261113_01)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  Mostrador · aviso de cumpleaños · Pareja A
+--
+--  Correr en el SQL Editor de Supabase. Es re-ejecutable.
+--
+--    · v_cumpleanos_hoy: alumnos activos que cumplen años hoy (hora de
+--      Argentina) y todavía no fueron saludados. Los nacidos un 29/02
+--      se saludan el 28/02 en los años que no son bisiestos.
+--    · saludos_cumple: quién saludó a quién y cuándo (uno por año).
+--    · registrar_saludo_cumple(alumno): lo marca como saludado y el aviso
+--      desaparece. Solo Recepción y SuperAdmin.
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS public.saludos_cumple (
+    alumno_id     UUID NOT NULL REFERENCES public.alumnos(usuario_id) ON DELETE CASCADE,
+    anio          INTEGER NOT NULL,
+    enviado_por   UUID NOT NULL REFERENCES public.usuarios(id),
+    enviado_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (alumno_id, anio)
+);
+
+ALTER TABLE public.saludos_cumple ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS saludos_cumple_select ON public.saludos_cumple;
+CREATE POLICY saludos_cumple_select ON public.saludos_cumple FOR SELECT TO authenticated
+    USING (public.mi_rol() IN ('Recepcionista', 'SuperAdmin'));
+REVOKE INSERT, UPDATE, DELETE ON public.saludos_cumple FROM anon, authenticated;
+
+CREATE OR REPLACE VIEW public.v_cumpleanos_hoy WITH (security_invoker = true) AS
+SELECT u.id AS alumno_id, u.nombre, u.apellido, u.telefono, a.fecha_nacimiento,
+       extract(year FROM age(public.hoy_ar(), a.fecha_nacimiento))::int AS edad
+  FROM public.alumnos a
+  JOIN public.usuarios u ON u.id = a.usuario_id
+ WHERE u.activo
+   AND a.fecha_nacimiento IS NOT NULL
+   AND public.mi_rol() IN ('Recepcionista', 'SuperAdmin')
+   AND (
+        to_char(a.fecha_nacimiento, 'MM-DD') = to_char(public.hoy_ar(), 'MM-DD')
+        -- 29/02 en un año que no es bisiesto: se saluda el 28/02
+        OR (to_char(a.fecha_nacimiento, 'MM-DD') = '02-29'
+            AND to_char(public.hoy_ar(), 'MM-DD') = '02-28'
+            AND extract(day FROM (date_trunc('year', public.hoy_ar()) + interval '2 months' - interval '1 day')) = 28)
+   )
+   AND NOT EXISTS (
+        SELECT 1 FROM public.saludos_cumple s
+         WHERE s.alumno_id = a.usuario_id AND s.anio = extract(year FROM public.hoy_ar())::int
+   );
+GRANT SELECT ON public.v_cumpleanos_hoy TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.registrar_saludo_cumple(p_alumno_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+    INSERT INTO public.saludos_cumple (alumno_id, anio, enviado_por)
+    VALUES (p_alumno_id, extract(year FROM public.hoy_ar())::int, auth.uid())
+    ON CONFLICT (alumno_id, anio) DO NOTHING;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.registrar_saludo_cumple(UUID) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.registrar_saludo_cumple(UUID) TO authenticated;
 
 
 -- ---------------------------------------------------------------------
