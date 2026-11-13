@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, formatearPesos, hoyAR, mensajeError } from '../../lib/utils'
-import { AYUDA_STOCK, AYUDA_VENCIMIENTO, buscarProductos, COLOR_STOCK, COLOR_VENCIMIENTO, estadoStock, estadoVencimiento } from '../../lib/kiosco'
+import { AYUDA_STOCK, ayudaVencimiento, buscarProductos, COLOR_STOCK, COLOR_VENCIMIENTO, estadoStock, estadoVencimiento } from '../../lib/kiosco'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import CampoFecha from '../../components/CampoFecha'
@@ -198,8 +198,8 @@ function FilaProducto({ producto: p, hoy, editando, alEditar, alCancelarEdicion,
       </div>
 
       <p
-        title={AYUDA_VENCIMIENTO[venc]}
-        className={`order-4 justify-self-end text-sm md:order-4 md:justify-self-start ${p.vencimiento ? '' : 'hidden md:block'} ${venc ? COLOR_VENCIMIENTO[venc] : 'text-neutral-600'} ${AYUDA_VENCIMIENTO[venc] ? 'cursor-help' : ''}`}
+        title={ayudaVencimiento(p.vencimiento, hoy)}
+        className={`order-4 justify-self-end text-sm md:order-4 md:justify-self-start ${p.vencimiento ? '' : 'hidden md:block'} ${venc ? COLOR_VENCIMIENTO[venc] : 'text-neutral-600'} ${venc === 'vencido' || venc === 'por_vencer' ? 'cursor-help' : ''}`}
       >
         {p.vencimiento && <span className="text-neutral-500 md:hidden">Vence </span>}
         {p.vencimiento ? formatearFecha(p.vencimiento) : '—'}

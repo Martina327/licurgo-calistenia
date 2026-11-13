@@ -7,7 +7,7 @@ import Aviso from '../../components/Aviso'
 import CampoFecha from '../../components/CampoFecha'
 import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 import { IconoBuscar } from '../../components/Iconos'
-import { AYUDA_STOCK, AYUDA_VENCIMIENTO, buscarProductos, COLOR_STOCK, estadoStock, estadoVencimiento } from '../../lib/kiosco'
+import { AYUDA_STOCK, ayudaVencimiento, buscarProductos, COLOR_STOCK, estadoStock, estadoVencimiento } from '../../lib/kiosco'
 
 // Caja (Pareja A). Recepción y SuperAdmin.
 //   A2 · Abrir el turno de caja con el monto inicial (el cambio que hay en la caja).
@@ -671,7 +671,7 @@ function Kiosco() {
                       <span className="text-base font-semibold tabular-nums">{formatearPesos(p.precio)}</span>
                       <span className={`text-xs ${COLOR_STOCK[stock]}`} title={AYUDA_STOCK[stock]}>
                         {stock === 'sin' ? 'Sin stock' : `Stock: ${p.stock}`}
-                        {venc === 'vencido' && <span className="text-red-400" title={AYUDA_VENCIMIENTO.vencido}> · Vencido</span>}
+                        {venc === 'vencido' && <span className="text-red-400" title={ayudaVencimiento(p.vencimiento, hoy)}> · Vencido</span>}
                       </span>
                     </button>
                   </li>

@@ -41,7 +41,11 @@ export const AYUDA_STOCK = {
   sin: 'Sin stock, no se puede vender.',
   bajo: `Stock bajo: quedan ${STOCK_BAJO} o menos. Conviene reponer.`,
 }
-export const AYUDA_VENCIMIENTO = {
-  vencido: 'El producto ya venció.',
-  por_vencer: `Vence en ${DIAS_POR_VENCER} días o menos.`,
+// Para la fecha en amarillo dice exactamente cuántos días faltan
+export function ayudaVencimiento(vencimiento, hoy) {
+  const estado = estadoVencimiento(vencimiento, hoy)
+  if (estado === 'vencido') return 'El producto ya venció.'
+  if (estado !== 'por_vencer') return undefined
+  const dias = diasEntre(hoy, vencimiento)
+  return dias === 0 ? 'Vence hoy.' : dias === 1 ? 'Vence mañana.' : `Faltan ${dias} días para que venza.`
 }
