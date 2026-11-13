@@ -54,3 +54,6 @@ export const IconoBasurero = (p) => (
 export const IconoBuscar = (p) => (
   <Base {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></Base>
 )
+export const IconoCalendario = (p) => (
+  <Base {...p}><rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M3.5 10h17M8 3v4M16 3v4" /></Base>
+)

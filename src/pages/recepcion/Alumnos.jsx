@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import { esDniValido, formatearFecha, mensajeError } from '../../lib/utils'
+import { esDniValido, formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import CampoFecha from '../../components/CampoFecha'
 import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 
 // Gestión de alumnos (CU01 · A1). Recepción y SuperAdmin.
@@ -348,6 +349,7 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
     if (!esDniValido(dni)) return setError('El DNI tiene que tener 7 u 8 números.')
     if (telefono.length < 10) return setError('El celular tiene que tener código de área y número, sin el 0 ni el 15 (ej.: 3815551234).')
     if (!esEmailValido(datos.email_contacto.trim())) return setError('Ingresá un email válido.')
+    if (datos.fecha_nacimiento === null) return setError('Revisá la fecha de nacimiento (día/mes/año).')
     if (fichaObligatoria && (!datos.fecha_nacimiento || !datos.domicilio.trim() || !datos.contacto_emergencia.trim())) {
       return setError('Completá fecha de nacimiento, domicilio y contacto de emergencia.')
     }
@@ -426,7 +428,7 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm">
             <span className="text-neutral-400">Fecha de nacimiento</span>
-            <input type="date" value={datos.fecha_nacimiento} onChange={cambiar('fecha_nacimiento')} className={campo} />
+            <CampoFecha value={datos.fecha_nacimiento} onChange={cambiar('fecha_nacimiento')} max={hoyAR()} className={campo} />
           </label>
           <label className="space-y-1 text-sm">
             <span className="text-neutral-400">Domicilio</span>

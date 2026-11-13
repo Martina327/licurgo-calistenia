@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { formatearFecha, formatearPesos, hoyAR, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import CampoFecha from '../../components/CampoFecha'
 import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 import { IconoBuscar } from '../../components/Iconos'
 import { AYUDA_STOCK, AYUDA_VENCIMIENTO, buscarProductos, COLOR_STOCK, estadoStock, estadoVencimiento } from '../../lib/kiosco'
@@ -461,6 +462,7 @@ function CompletarFicha({ alumno, alGuardar, alCancelar }) {
   const guardar = async (e) => {
     e.preventDefault()
     setError('')
+    if (datos.fecha_nacimiento === null) return setError('Revisá la fecha de nacimiento (día/mes/año).')
     if (!datos.email.trim() || !datos.fecha_nacimiento || !datos.domicilio.trim() || !datos.contacto_emergencia.trim()) {
       return setError('Completá todos los datos para poder cobrar la primera cuota.')
     }
@@ -495,7 +497,7 @@ function CompletarFicha({ alumno, alGuardar, alCancelar }) {
         </label>
         <label className="space-y-1 text-sm">
           <span className="text-neutral-400">Fecha de nacimiento</span>
-          <input type="date" value={datos.fecha_nacimiento} onChange={cambiar('fecha_nacimiento')} className={campo} />
+          <CampoFecha value={datos.fecha_nacimiento} onChange={cambiar('fecha_nacimiento')} max={hoyAR()} className={campo} />
         </label>
         <label className="space-y-1 text-sm">
           <span className="text-neutral-400">Domicilio</span>

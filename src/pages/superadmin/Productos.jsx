@@ -4,6 +4,7 @@ import { formatearFecha, formatearPesos, hoyAR, mensajeError } from '../../lib/u
 import { AYUDA_STOCK, AYUDA_VENCIMIENTO, buscarProductos, COLOR_STOCK, COLOR_VENCIMIENTO, estadoStock, estadoVencimiento } from '../../lib/kiosco'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import CampoFecha from '../../components/CampoFecha'
 import { IconoBasurero, IconoBuscar, IconoLapiz } from '../../components/Iconos'
 
 // Productos del kiosco (CU14 · A3). SOLO SuperAdmin (decisión del dueño, 11/11/2026).
@@ -202,7 +203,6 @@ function FilaProducto({ producto: p, hoy, editando, alEditar, alCancelarEdicion,
       >
         {p.vencimiento && <span className="text-neutral-500 md:hidden">Vence </span>}
         {p.vencimiento ? formatearFecha(p.vencimiento) : '—'}
-        {venc === 'vencido' && <span className="ml-1 text-xs md:ml-0 md:block">vencido</span>}
       </p>
 
       <div className="order-2 flex justify-end gap-1 md:order-5">
@@ -365,6 +365,7 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
     if (!nombre) return setError('Ingresá el nombre del producto.')
     if (!(precio > 0)) return setError('El precio tiene que ser mayor a 0.')
     if (esNuevo && (!esEntero(stock) || stock < 0)) return setError('El stock tiene que ser un número entero, 0 o más.')
+    if (datos.vencimiento === null) return setError('Revisá la fecha de vencimiento (día/mes/año) o dejala vacía.')
 
     setEnviando(true)
     const fila = { nombre, precio, vencimiento: datos.vencimiento || null, ...(esNuevo ? { stock } : {}) }
@@ -399,7 +400,7 @@ function FormProducto({ producto, alCancelar, alGuardar }) {
         )}
         <label className="space-y-1 text-sm">
           <span className="text-neutral-400">Vencimiento <span className="text-neutral-600">(opcional)</span></span>
-          <input type="date" value={datos.vencimiento} onChange={cambiar('vencimiento')} className={`${campo} [color-scheme:dark]`} />
+          <CampoFecha value={datos.vencimiento} onChange={cambiar('vencimiento')} className={campo} />
         </label>
       </div>
       {!esNuevo && (

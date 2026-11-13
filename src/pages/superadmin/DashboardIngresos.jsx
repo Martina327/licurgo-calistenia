@@ -6,6 +6,7 @@ import {
 } from '../../lib/ingresos'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import CampoFecha from '../../components/CampoFecha'
 import AvisoCierres from '../../components/AvisoCierres'
 
 // CU12 · Dashboard de ingresos (A7). SOLO SuperAdmin: v_movimientos, v_cierres_caja y
@@ -99,13 +100,13 @@ export default function DashboardIngresos() {
         <div className="flex flex-wrap items-end gap-3 text-sm">
           <label className="space-y-1">
             <span className="block text-neutral-400">Desde</span>
-            <input type="date" value={personalizado.desde} max={hoy} onChange={(e) => setPersonalizado((p) => ({ ...p, desde: e.target.value }))}
-              className="rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2" />
+            <CampoFecha value={personalizado.desde} max={hoy} onChange={(e) => e.target.value && setPersonalizado((p) => ({ ...p, desde: e.target.value }))}
+              className="w-40 rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-neutral-400" />
           </label>
           <label className="space-y-1">
             <span className="block text-neutral-400">Hasta</span>
-            <input type="date" value={personalizado.hasta} max={hoy} onChange={(e) => setPersonalizado((p) => ({ ...p, hasta: e.target.value }))}
-              className="rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2" />
+            <CampoFecha value={personalizado.hasta} max={hoy} onChange={(e) => e.target.value && setPersonalizado((p) => ({ ...p, hasta: e.target.value }))}
+              className="w-40 rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-neutral-400" />
           </label>
           {!rangoValido && <span className="text-red-400">La fecha "desde" tiene que ser anterior a "hasta".</span>}
         </div>
