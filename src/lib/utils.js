@@ -114,10 +114,11 @@ export const mensajeError = (error) => {
 export const MENSAJES_WHATSAPP = {
   // RF13: el alumno escribe al dueño (sugerencias y consultas)
   contacto: (nombre, apellido) => `Hola, soy ${nombre} ${apellido}, alumno de Licurgo Calistenia. Les escribo por una sugerencia / consulta: `,
-  vencimiento: (nombre, dias) =>
+  // Con la fecha de pago, no con los días que faltan (pedido del dueño)
+  vencimiento: (nombre, dias, fecha) =>
     dias < 0
-      ? `Hola ${nombre}, te escribimos de Licurgo Calistenia. Tu cuota venció hace ${Math.abs(dias)} día(s). Podés abonarla en recepción o subir el comprobante de transferencia en la app.`
-      : `Hola ${nombre}, te escribimos de Licurgo Calistenia. Tu cuota vence ${dias === 0 ? 'hoy' : `en ${dias} día(s)`}. Podés abonarla en recepción o subir el comprobante de transferencia en la app.`,
+      ? `Hola ${nombre}, te escribimos de Licurgo Calistenia. Tu cuota venció el ${formatearFecha(fecha)}. Podés abonarla en recepción o subir el comprobante de transferencia en la app.`
+      : `Hola ${nombre}, te escribimos de Licurgo Calistenia. Tu cuota vence ${dias === 0 ? 'hoy' : `el ${formatearFecha(fecha)}`}. Podés abonarla en recepción o subir el comprobante de transferencia en la app.`,
   cumple: (nombre) =>
     `¡Feliz cumple, ${nombre}! 🎉 Todo el equipo de Licurgo Calistenia te desea un día buenísimo. ¡Te esperamos para festejarlo entrenando! 💪`,
   certificado: (nombre) =>

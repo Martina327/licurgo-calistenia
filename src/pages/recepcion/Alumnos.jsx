@@ -6,7 +6,9 @@ import { esDniValido, formatearFecha, hoyAR, mensajeError } from '../../lib/util
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import CampoFecha from '../../components/CampoFecha'
-import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
+import { EtiquetaAlumno, EtiquetaUnica } from '../../components/EtiquetaEstado'
+import Ayuda from '../../components/Ayuda'
+import { IconoLapiz } from '../../components/Iconos'
 
 // Gestión de alumnos (CU01 · A1). Recepción y SuperAdmin.
 //   · Listado con el estado del alumno y de la cuota, buscador y filtro.
@@ -118,10 +120,7 @@ export default function Alumnos() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Alumnos</h1>
-          <p className="text-sm text-neutral-400">Estado de cada alumno y de su cuota.</p>
-        </div>
+        <h1 className="text-xl font-semibold">Alumnos</h1>
         {!mostrarAlta && !editando && (
           <button onClick={abrirAlta} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950">
             + Clase de prueba
@@ -182,7 +181,6 @@ export default function Alumnos() {
                 <th className="px-3 py-2">DNI</th>
                 <th className="px-3 py-2">Celular</th>
                 <th className="px-3 py-2">Estado</th>
-                <th className="px-3 py-2">Cuota</th>
                 <th className="px-3 py-2">Vence</th>
                 <th className="px-3 py-2"></th>
               </tr>
@@ -191,26 +189,35 @@ export default function Alumnos() {
               {visibles.map((a) => (
                 <tr key={a.alumno_id} className="border-t border-neutral-800">
                   <td className="px-3 py-2">
-                    <div className="font-medium">{a.apellido}, {a.nombre}</div>
-                    {a.pase_libre && (
-                      <div className="text-xs text-sky-300">Pase libre{a.pase_libre_motivo ? ` · ${a.pase_libre_motivo}` : ''}</div>
-                    )}
-                    {a.datos_faltantes?.length > 0 && (
-                      <div className="text-xs text-amber-400">Falta: {a.datos_faltantes.join(', ')}</div>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{a.apellido}, {a.nombre}</span>
+                      {a.datos_faltantes?.length > 0 && (
+                        <Ayuda
+                          texto={`Falta cargar: ${a.datos_faltantes.join(', ')}. Se completa con el lápiz.`}
+                          className="rounded-full border border-amber-800 px-2 py-0.5 text-[11px] font-medium text-amber-400 hover:bg-amber-950"
+                        >
+                          Falta info
+                        </Ayuda>
+                      )}
+                    </div>
+                    {a.pase_libre && a.pase_libre_motivo && <div className="text-xs text-sky-300/80">{a.pase_libre_motivo}</div>}
                   </td>
                   <td className="px-3 py-2">{a.dni}</td>
                   <td className="px-3 py-2">{a.telefono ?? '—'}</td>
-                  <td className="px-3 py-2"><EtiquetaAlumno estado={a.estado_alumno} /></td>
-                  <td className="px-3 py-2"><EtiquetaCuota estado={a.pase_libre ? 'Pase libre' : a.estado_membresia} /></td>
+                  <td className="px-3 py-2"><EtiquetaUnica alumno={a} /></td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {a.estado_alumno === 'En clase de prueba'
                       ? <span className="text-neutral-500">Prueba el {formatearFecha(a.fecha_clase_prueba)}</span>
                       : formatearFecha(a.fecha_vencimiento)}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => abrirEdicion(a)} className="text-neutral-300 hover:text-white hover:underline">
-                      Editar
+                    <button
+                      onClick={() => abrirEdicion(a)}
+                      aria-label={`Editar a ${a.nombre} ${a.apellido}`}
+                      title="Editar"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 text-white hover:bg-neutral-800"
+                    >
+                      <IconoLapiz className="h-4 w-4" />
                     </button>
                   </td>
                 </tr>

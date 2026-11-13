@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 // Circulito "i" que muestra una explicación corta.
 // En la compu aparece al pasar el mouse; en el celular, al tocarlo (y se cierra tocando afuera).
-export default function Ayuda({ texto }) {
+// `children` reemplaza al circulito por otro disparador (ej. la etiqueta "Falta info").
+export default function Ayuda({ texto, children, className }) {
   const [abierta, setAbierta] = useState(false)
   const caja = useRef(null)
 
@@ -18,10 +19,10 @@ export default function Ayuda({ texto }) {
       <button
         type="button"
         onClick={(e) => { e.preventDefault(); setAbierta((a) => !a) }}
-        aria-label="Más información"
-        className="ml-1 flex h-4 w-4 items-center justify-center rounded-full border border-neutral-600 text-[10px] font-semibold leading-none text-neutral-400 hover:border-neutral-300 hover:text-white"
+        aria-label={children ? undefined : 'Más información'}
+        className={className ?? 'ml-1 flex h-4 w-4 items-center justify-center rounded-full border border-neutral-600 text-[10px] font-semibold leading-none text-neutral-400 hover:border-neutral-300 hover:text-white'}
       >
-        i
+        {children ?? 'i'}
       </button>
       <span
         role="tooltip"

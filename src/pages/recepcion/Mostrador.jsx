@@ -260,7 +260,7 @@ function Alertas({ alertas: todas }) {
             <tbody>
               {alertas.map((a) => {
                 const texto = a.tipo === 'Membresía'
-                  ? MENSAJES_WHATSAPP.vencimiento(a.nombre, a.dias_restantes)
+                  ? MENSAJES_WHATSAPP.vencimiento(a.nombre, a.dias_restantes, a.vence)
                   : MENSAJES_WHATSAPP.certificado(a.nombre)
                 const wa = linkWhatsApp(a.telefono, texto)
                 return (

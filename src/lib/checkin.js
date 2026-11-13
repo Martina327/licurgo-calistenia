@@ -5,6 +5,9 @@
 // ---------------------------------------------------------------
 import { normalizar } from './filtroAlumnos.js'
 
+// La fecha de pago en lugar de los días que faltan (pedido del dueño, 13/11/2026)
+const fechaCorta = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '')
+
 const soloDigitos = (t) => String(t ?? '').replace(/\D/g, '')
 
 const esConsultaDni = (consulta) => soloDigitos(consulta).length > 0 && /^[\d.\s]+$/.test(String(consulta ?? '').trim())
@@ -59,18 +62,17 @@ export function situacionCheckin(a) {
     return { tono: 'info', etiqueta: 'Clase de prueba', texto: 'Está en su clase de prueba (todavía no pagó ninguna cuota).' }
   }
   if (a.estado_membresia === 'Vencida') {
-    const hace = Math.abs(dias)
     return {
       tono: 'alerta',
       etiqueta: a.estado_alumno === 'Inactivo' ? 'Inactivo' : 'Vencida',
-      texto: `Cuota vencida hace ${hace} día${hace === 1 ? '' : 's'}. Puede entrenar igual: recordale pasar por caja.`,
+      texto: `La cuota venció el ${fechaCorta(a.fecha_vencimiento)}. Puede entrenar igual: recordale pasar por caja.`,
     }
   }
   if (a.estado_membresia === 'Por vencer') {
     return {
       tono: 'aviso',
       etiqueta: 'Por vencer',
-      texto: dias === 0 ? 'La cuota vence hoy.' : `La cuota vence en ${dias} día${dias === 1 ? '' : 's'}.`,
+      texto: dias === 0 ? 'La cuota vence hoy.' : `La cuota vence el ${fechaCorta(a.fecha_vencimiento)}.`,
     }
   }
   return { tono: 'ok', etiqueta: 'Al día', texto: 'Cuota al día.' }
