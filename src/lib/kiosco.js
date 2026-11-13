@@ -38,10 +38,10 @@ export const COLOR_VENCIMIENTO = { vencido: 'text-red-400', por_vencer: 'text-am
 
 // Texto que aparece al pasar el mouse sobre un número en color (explica qué significa)
 export const AYUDA_STOCK = {
-  sin: 'En rojo: sin stock, no se puede vender.',
-  bajo: `En amarillo: stock bajo, quedan ${STOCK_BAJO} o menos. Conviene reponer.`,
+  sin: 'Sin stock, no se puede vender.',
+  bajo: `Stock bajo: quedan ${STOCK_BAJO} o menos. Conviene reponer.`,
 }
 export const AYUDA_VENCIMIENTO = {
-  vencido: 'En rojo: el producto ya venció.',
-  por_vencer: `En amarillo: vence en ${DIAS_POR_VENCER} días o menos.`,
+  vencido: 'El producto ya venció.',
+  por_vencer: `Vence en ${DIAS_POR_VENCER} días o menos.`,
 }
