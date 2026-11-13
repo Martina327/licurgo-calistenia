@@ -26,13 +26,13 @@ DROP TRIGGER IF EXISTS trg_nuevo_usuario_auth ON auth.users;
 DROP VIEW IF EXISTS public.v_rutina_activa, public.v_membresias, public.v_alertas,
                     public.v_invitaciones_pendientes,
                     public.v_ingresos_diarios, public.v_concurrencia,
-                    public.v_rutina_alumno, public.v_alumnos_baja CASCADE;
+                    public.v_rutina_alumno, public.v_alumnos_baja, public.v_cierres_caja, public.v_personal, public.v_movimientos CASCADE;
 
 DROP TABLE IF EXISTS
     -- esquema v1 (modulo_coach.sql)
     public.fichas_observaciones, public.item_ejercicio, public.rutina_dia,
     -- esquema v2
-    public.certificados_cargas, public.datos_cobro, public.dias_completados, public.rutinas_plantilla, public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
+    public.configuracion_admin, public.pase_libre_historial, public.certificados_cargas, public.datos_cobro, public.dias_completados, public.rutinas_plantilla, public.observaciones_alumno, public.rutina_items, public.rutina_dias, public.rutinas,
     public.ejercicios, public.invitaciones_retomar, public.asistencias, public.ingresos, public.venta_items,
     public.ventas, public.productos, public.espacios_alquiler, public.turnos_caja,
     public.comprobantes_pago, public.certificados_aptos, public.alumnos,
@@ -55,7 +55,14 @@ DROP FUNCTION IF EXISTS public.fn_set_fecha_actualizacion, public.fn_validar_rol
     -- Pareja A · A1
     public._plan_unico, public.marcar_clave_cambiada, public.alta_clase_prueba,
     public._alumno_existente, public.editar_alumno, public.dar_baja_alumno,
-    public.reactivar_alumno, public._normalizar_email, public._datos_faltantes CASCADE;
+    public.reactivar_alumno, public._normalizar_email, public._datos_faltantes,
+    public.cargar_stock, public.ajustar_stock, public.registrar_pago_cuota, public.marcar_cierre_revisado,
+    -- Pareja A · A6
+    public._generar_clave, public._personal_editable, public.alta_personal, public.editar_personal,
+    public.cambiar_estado_personal, public.restablecer_clave_personal,
+    public.asignar_pase_libre, public.quitar_pase_libre,
+    -- Pareja A · A7
+    public.guardar_planilla_url CASCADE;
 
 -- Usuarios mock de Supabase Auth (por DNI)
 DELETE FROM auth.users
@@ -2581,7 +2588,1103 @@ GRANT  EXECUTE ON FUNCTION public.whatsapp_contacto() TO authenticated;
 
 
 -- ---------------------------------------------------------------------
--- 19.15 PAREJA B · B4 APTO MÉDICO: CARGA DEL ALUMNO Y APROBACIÓN (migración 20261112_03)
+-- 19.15 PAREJA A · A2 COBRO DE CUOTA (migración 20261108_01)
+--       Alumno inactivo que vuelve: los 30 días cuentan desde que paga.
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  A2 · Cobrar cuota en efectivo (CU06) · Pareja A
+--  Regla de vencimiento para alumnos inactivos que vuelven
+--
+--  Correr en el SQL Editor de Supabase DESPUÉS de las migraciones de A1
+--  (20261107_01 a 03). Es re-ejecutable.
+--
+--  Decisión del equipo (08/11/2026):
+--    · Regla general (sin cambios): cada cuota suma +30 días al
+--      vencimiento actual, pague antes o unos días tarde.
+--    · Alumno INACTIVO (cuota vencida hace más de 30 días): los 30 días
+--      cuentan desde el día que paga. Sin esto, alguien que vuelve
+--      después de meses pagaría y seguiría con la cuota vencida.
+--    · Primer pago: la ficha tiene que estar completa (regla de A1).
+--
+--  _extender_membresia la usan registrar_pago_efectivo (A2) y
+--  aprobar_comprobante (CU08, Pareja B): la regla vale para los dos.
+-- =====================================================================
+
+CREATE OR REPLACE FUNCTION public._extender_membresia(p_alumno_id UUID) RETURNS date
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_actual    date;
+    v_base      date;
+    v_faltantes TEXT[];
+    v_nuevo     date;
+BEGIN
+    SELECT fecha_vencimiento INTO v_actual FROM public.alumnos WHERE usuario_id = p_alumno_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ALUMNO_INEXISTENTE: %', p_alumno_id;
+    END IF;
+
+    IF v_actual IS NULL THEN
+        -- Primer pago: ficha completa y los 30 días cuentan desde hoy
+        v_faltantes := public._datos_faltantes(p_alumno_id);
+        IF cardinality(v_faltantes) > 0 THEN
+            RAISE EXCEPTION 'FICHA_INCOMPLETA: %', array_to_string(v_faltantes, ', ');
+        END IF;
+        v_base := public.hoy_ar();
+    ELSIF v_actual < public.hoy_ar() - 30 THEN
+        -- Inactivo que vuelve: arranca de nuevo desde hoy
+        v_base := public.hoy_ar();
+    ELSE
+        -- Activo (al día, por vencer o vencido hace 30 días o menos)
+        v_base := v_actual;
+    END IF;
+
+    v_nuevo := v_base + 30;
+    UPDATE public.alumnos SET fecha_vencimiento = v_nuevo WHERE usuario_id = p_alumno_id;
+    RETURN v_nuevo;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public._extender_membresia(UUID) FROM PUBLIC, anon, authenticated;
+
+
+
+
+-- ---------------------------------------------------------------------
+-- 19.16 PAREJA A · A3 KIOSCO: INGRESO DE MERCADERÍA (migración 20261111_01)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  A3 · Kiosco: productos y stock (CU14) · Pareja A
+--  Ingreso de mercadería
+--
+--  Correr en el SQL Editor de Supabase. Es re-ejecutable.
+--
+--  Decisión del dueño (11/11/2026): los productos los maneja SOLO el
+--  SuperAdmin (alta, precios, stock y baja). Ya lo garantiza la política
+--  productos_write; recepción solo lee y vende.
+--
+--  cargar_stock suma la mercadería que llega en una sola operación
+--  (stock = stock + n), así no pisa una venta que ocurra al mismo tiempo.
+-- =====================================================================
+
+CREATE OR REPLACE FUNCTION public.cargar_stock(p_producto_id UUID, p_cantidad INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_stock INTEGER;
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    IF p_cantidad IS NULL OR p_cantidad <= 0 THEN
+        RAISE EXCEPTION 'CANTIDAD_INVALIDA';
+    END IF;
+    UPDATE public.productos SET stock = stock + p_cantidad
+     WHERE id = p_producto_id
+    RETURNING stock INTO v_stock;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'PRODUCTO_INEXISTENTE: %', p_producto_id;
+    END IF;
+    RETURN v_stock;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.cargar_stock(UUID, INTEGER) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.cargar_stock(UUID, INTEGER) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 19.17 PAREJA A · A4 SUBALQUILER: SALONES Y COBRO (migración 20261111_02)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  A4 · Cobro de subalquiler (CU16) · Pareja A
+--  Salones con precio por hora y mensual · cobro calculado por el sistema
+--
+--  Correr en el SQL Editor de Supabase DESPUÉS de 20261111_01.
+--  Es re-ejecutable.
+--
+--  Decisiones (11/11/2026):
+--    · espacios_alquiler pasa a ser el catálogo de SALONES. Los carga y
+--      edita SOLO el SuperAdmin (política espacios_write, ya existente).
+--      Cada salón tiene precio por hora y, opcional, precio mensual.
+--      Las promos se manejan cambiando el precio del salón.
+--    · Quién alquila ya no es un dato del salón: se escribe en cada cobro
+--      (los que alquilan por hora suelen ser eventuales).
+--    · Cobran Recepción y SuperAdmin. El monto lo calcula la base con el
+--      precio vigente (horas × precio por hora, o precio mensual):
+--      la recepcionista no lo puede cambiar (opción B).
+--    · Efectivo va al turno de caja; transferencia solo al dashboard.
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- 1. Salones
+-- ---------------------------------------------------------------------
+ALTER TABLE public.espacios_alquiler ADD COLUMN IF NOT EXISTS precio_hora    NUMERIC(12,2);
+ALTER TABLE public.espacios_alquiler ADD COLUMN IF NOT EXISTS precio_mensual NUMERIC(12,2);
+
+-- Lo que había en canon_sugerido era el precio mensual
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'espacios_alquiler'
+                  AND column_name = 'canon_sugerido') THEN
+        UPDATE public.espacios_alquiler SET precio_mensual = coalesce(precio_mensual, canon_sugerido);
+        ALTER TABLE public.espacios_alquiler DROP COLUMN canon_sugerido;
+    END IF;
+END $$;
+
+ALTER TABLE public.espacios_alquiler DROP COLUMN IF EXISTS locatario;
+
+UPDATE public.espacios_alquiler SET precio_hora = 15000 WHERE precio_hora IS NULL;
+ALTER TABLE public.espacios_alquiler ALTER COLUMN precio_hora SET NOT NULL;
+
+ALTER TABLE public.espacios_alquiler DROP CONSTRAINT IF EXISTS chk_precio_hora;
+ALTER TABLE public.espacios_alquiler ADD  CONSTRAINT chk_precio_hora    CHECK (precio_hora > 0);
+ALTER TABLE public.espacios_alquiler DROP CONSTRAINT IF EXISTS chk_precio_mensual;
+ALTER TABLE public.espacios_alquiler ADD  CONSTRAINT chk_precio_mensual CHECK (precio_mensual IS NULL OR precio_mensual > 0);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_espacios_nombre ON public.espacios_alquiler (lower(nombre));
+
+-- El salón de prueba deja de tener nombre de horario
+UPDATE public.espacios_alquiler SET nombre = 'Salón funcional'
+ WHERE id = 'e0000000-0000-0000-0000-000000000001' AND nombre = 'Sector funcional – sábados';
+
+
+-- ---------------------------------------------------------------------
+-- 2. Cobro de subalquiler (reemplaza a la versión con monto libre)
+-- ---------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.registrar_cobro_alquiler(UUID, NUMERIC, public.medio_pago, TEXT);
+DROP FUNCTION IF EXISTS public.registrar_cobro_alquiler(UUID, TEXT, NUMERIC, DATE, TEXT, TEXT, public.medio_pago);
+
+CREATE FUNCTION public.registrar_cobro_alquiler(
+    p_espacio_id UUID,
+    p_modalidad  TEXT,              -- 'Por hora' | 'Mensual'
+    p_horas      NUMERIC,           -- solo Por hora (múltiplos de media hora)
+    p_periodo    DATE,              -- solo Mensual (cualquier día del mes que paga)
+    p_locatario  TEXT,              -- quién alquila
+    p_contacto   TEXT,              -- celular (opcional)
+    p_medio      public.medio_pago
+)
+RETURNS NUMERIC                     -- monto cobrado
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_salon     public.espacios_alquiler;
+    v_locatario TEXT := trim(coalesce(p_locatario, ''));
+    v_contacto  TEXT := nullif(regexp_replace(coalesce(p_contacto, ''), '\D', '', 'g'), '');
+    v_monto     NUMERIC;
+    v_detalle   TEXT;
+    v_turno     UUID;
+    v_meses     TEXT[] := ARRAY['enero','febrero','marzo','abril','mayo','junio','julio',
+                                'agosto','septiembre','octubre','noviembre','diciembre'];
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+
+    SELECT * INTO v_salon FROM public.espacios_alquiler WHERE id = p_espacio_id AND activo;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ESPACIO_INEXISTENTE';
+    END IF;
+    IF v_locatario = '' THEN
+        RAISE EXCEPTION 'LOCATARIO_REQUERIDO';
+    END IF;
+
+    IF p_modalidad = 'Por hora' THEN
+        IF p_horas IS NULL OR p_horas <= 0 OR p_horas > 24 OR (p_horas * 2) <> trunc(p_horas * 2) THEN
+            RAISE EXCEPTION 'HORAS_INVALIDAS: %', p_horas;
+        END IF;
+        v_monto   := round(p_horas * v_salon.precio_hora, 2);
+        v_detalle := format('%s · Por hora · %s h × $%s', v_salon.nombre,
+                            replace(rtrim(rtrim(p_horas::text, '0'), '.'), '.', ','),
+                            replace(to_char(v_salon.precio_hora, 'FM999,999,990'), ',', '.'));
+    ELSIF p_modalidad = 'Mensual' THEN
+        IF v_salon.precio_mensual IS NULL THEN
+            RAISE EXCEPTION 'SIN_PRECIO_MENSUAL';
+        END IF;
+        IF p_periodo IS NULL THEN
+            RAISE EXCEPTION 'PERIODO_REQUERIDO';
+        END IF;
+        v_monto   := v_salon.precio_mensual;
+        v_detalle := format('%s · Mensual · %s %s', v_salon.nombre,
+                            v_meses[extract(month FROM p_periodo)::int], extract(year FROM p_periodo)::int);
+    ELSE
+        RAISE EXCEPTION 'MODALIDAD_INVALIDA: %', p_modalidad;
+    END IF;
+
+    v_detalle := v_detalle || ' · ' || v_locatario || coalesce(' · ' || v_contacto, '');
+
+    IF p_medio = 'Efectivo' THEN
+        v_turno := public._turno_abierto();
+    END IF;
+
+    INSERT INTO public.ingresos (concepto, medio_pago, monto, espacio_id, turno_id, registrado_por, detalle)
+    VALUES ('Subalquiler', p_medio, v_monto, p_espacio_id, v_turno, auth.uid(), v_detalle);
+
+    RETURN v_monto;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.registrar_cobro_alquiler(UUID, TEXT, NUMERIC, DATE, TEXT, TEXT, public.medio_pago) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.registrar_cobro_alquiler(UUID, TEXT, NUMERIC, DATE, TEXT, TEXT, public.medio_pago) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 19.18 PAREJA A · A5 CAJA DE RECEPCIÓN Y COBROS DEL DUEÑO (migración 20261111_03)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  A5 · Caja de recepción y cobros del dueño · Pareja A
+--
+--  Correr en el SQL Editor de Supabase DESPUÉS de 20261111_02.
+--  Es re-ejecutable.
+--
+--  Decisión del equipo (11/11/2026):
+--    · La CAJA (turno, kiosco, arqueo) es solo de las RECEPCIONISTAS.
+--    · El DUEÑO no abre turno, pero a veces le pagan directo a él:
+--      puede anotar cobros de CUOTA (efectivo o transferencia) y de
+--      SUBALQUILER (efectivo o transferencia). Ese efectivo queda
+--      registrado SIN turno: no altera el cierre de ninguna recepcionista.
+--    · KIOSCO: solo recepcionistas (siempre dentro de un turno).
+--    · Cuota por transferencia anotada a mano: solo el dueño. Las de los
+--      alumnos siguen por el flujo de comprobantes (B4/B5).
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- 1. Efectivo sin turno permitido (cobros del dueño)
+--    Antes: efectivo ⇔ turno. Ahora: la transferencia nunca tiene turno;
+--    el efectivo puede no tenerlo. Las funciones controlan quién.
+-- ---------------------------------------------------------------------
+ALTER TABLE public.ingresos DROP CONSTRAINT IF EXISTS chk_caja;
+ALTER TABLE public.ingresos ADD  CONSTRAINT chk_caja CHECK (medio_pago = 'Efectivo' OR turno_id IS NULL);
+
+
+-- ---------------------------------------------------------------------
+-- 2. Turno de la recepcionista. El dueño no tiene caja: devuelve NULL.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public._turno_abierto() RETURNS UUID
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_id UUID;
+BEGIN
+    IF public.mi_rol() = 'SuperAdmin' THEN
+        RETURN NULL;   -- cobro del dueño, fuera de la caja
+    END IF;
+    SELECT id INTO v_id FROM public.turnos_caja
+     WHERE usuario_id = auth.uid() AND cerrado_at IS NULL;
+    IF v_id IS NULL THEN
+        RAISE EXCEPTION 'SIN_TURNO_ABIERTO: abrí un turno de caja para cobrar en efectivo';
+    END IF;
+    RETURN v_id;
+END $$;
+
+
+-- ---------------------------------------------------------------------
+-- 3. Abrir, cerrar y justificar el turno: solo recepcionistas
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.abrir_turno(p_monto_inicial NUMERIC DEFAULT 0)
+RETURNS UUID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_id UUID;
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista}');
+    IF EXISTS (SELECT 1 FROM public.turnos_caja WHERE usuario_id = auth.uid() AND cerrado_at IS NULL) THEN
+        RAISE EXCEPTION 'TURNO_YA_ABIERTO';
+    END IF;
+    INSERT INTO public.turnos_caja (usuario_id, monto_inicial)
+    VALUES (auth.uid(), coalesce(p_monto_inicial, 0))
+    RETURNING id INTO v_id;
+    RETURN v_id;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.cerrar_turno(p_monto_contado NUMERIC, p_comentario TEXT DEFAULT NULL)
+RETURNS TABLE (turno_id UUID, monto_inicial NUMERIC, efectivo_cobrado NUMERIC,
+               monto_esperado NUMERIC, monto_contado NUMERIC, diferencia NUMERIC)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_turno   public.turnos_caja;
+    v_cobrado NUMERIC;
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista}');
+    IF p_monto_contado IS NULL OR p_monto_contado < 0 THEN
+        RAISE EXCEPTION 'MONTO_CONTADO_INVALIDO';
+    END IF;
+
+    SELECT * INTO v_turno FROM public.turnos_caja t
+     WHERE t.usuario_id = auth.uid() AND t.cerrado_at IS NULL
+       FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'SIN_TURNO_ABIERTO'; END IF;
+
+    SELECT coalesce(sum(i.monto), 0) INTO v_cobrado
+      FROM public.ingresos i
+     WHERE i.turno_id = v_turno.id AND i.medio_pago = 'Efectivo';
+
+    UPDATE public.turnos_caja t
+       SET cerrado_at     = now(),
+           monto_contado  = p_monto_contado,
+           monto_esperado = v_turno.monto_inicial + v_cobrado,
+           comentario     = nullif(trim(p_comentario), '')
+     WHERE t.id = v_turno.id;
+
+    RETURN QUERY
+    SELECT v_turno.id, v_turno.monto_inicial, v_cobrado,
+           v_turno.monto_inicial + v_cobrado, p_monto_contado,
+           p_monto_contado - (v_turno.monto_inicial + v_cobrado);
+END $$;
+
+CREATE OR REPLACE FUNCTION public.justificar_cierre(p_turno_id UUID, p_comentario TEXT)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista}');
+    UPDATE public.turnos_caja
+       SET comentario = trim(p_comentario)
+     WHERE id = p_turno_id
+       AND usuario_id = auth.uid()
+       AND cerrado_at IS NOT NULL
+       AND diferencia <> 0
+       AND comentario IS NULL
+       AND coalesce(trim(p_comentario), '') <> '';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'NO_SE_PUEDE_JUSTIFICAR: turno inexistente, sin diferencia o ya justificado';
+    END IF;
+END $$;
+
+
+-- ---------------------------------------------------------------------
+-- 4. Kiosco: solo recepcionistas (misma lógica que antes)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.registrar_venta(p_items JSONB, p_medio public.medio_pago)
+RETURNS UUID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_turno UUID;
+    v_venta UUID;
+    v_total NUMERIC := 0;
+    v_prod  public.productos;
+    it      RECORD;
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista}');
+    IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
+        RAISE EXCEPTION 'VENTA_VACIA';
+    END IF;
+    IF p_medio = 'Efectivo' THEN
+        v_turno := public._turno_abierto();
+    END IF;
+
+    INSERT INTO public.ventas (vendedor_id, medio_pago, turno_id)
+    VALUES (auth.uid(), p_medio, v_turno)
+    RETURNING id INTO v_venta;
+
+    FOR it IN
+        SELECT (e->>'producto_id')::uuid AS producto_id, (e->>'cantidad')::int AS cantidad
+          FROM jsonb_array_elements(p_items) e
+    LOOP
+        IF it.cantidad IS NULL OR it.cantidad <= 0 THEN
+            RAISE EXCEPTION 'CANTIDAD_INVALIDA';
+        END IF;
+        UPDATE public.productos
+           SET stock = stock - it.cantidad
+         WHERE id = it.producto_id AND activo AND stock >= it.cantidad
+        RETURNING * INTO v_prod;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'STOCK_INSUFICIENTE: producto %', it.producto_id;
+        END IF;
+        INSERT INTO public.venta_items (venta_id, producto_id, cantidad, precio_unitario)
+        VALUES (v_venta, it.producto_id, it.cantidad, v_prod.precio);
+        v_total := v_total + v_prod.precio * it.cantidad;
+    END LOOP;
+
+    UPDATE public.ventas SET total = v_total WHERE id = v_venta;
+
+    INSERT INTO public.ingresos (concepto, medio_pago, monto, venta_id, turno_id, registrado_por)
+    VALUES ('Kiosco', p_medio, v_total, v_venta, v_turno, auth.uid());
+
+    RETURN v_venta;
+END $$;
+
+
+-- ---------------------------------------------------------------------
+-- 5. Cobro de cuota con medio de pago
+--    Efectivo: recepcionista (con turno) o dueño (sin turno).
+--    Transferencia anotada a mano: solo el dueño.
+--    registrar_pago_efectivo queda como atajo (la usa la pantalla de A2).
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.registrar_pago_cuota(p_alumno_id UUID, p_medio public.medio_pago)
+RETURNS date
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_rol    public.rol_usuario;
+    v_turno  UUID;
+    v_precio NUMERIC;
+BEGIN
+    v_rol := public._exigir_rol('{Recepcionista,SuperAdmin}');
+    IF p_medio = 'Transferencia' AND v_rol <> 'SuperAdmin' THEN
+        RAISE EXCEPTION 'PERMISO_DENEGADO: las transferencias de cuota las registra el dueño o entran por comprobante'
+              USING ERRCODE = '42501';
+    END IF;
+    IF p_medio = 'Efectivo' THEN
+        v_turno := public._turno_abierto();
+    END IF;
+
+    SELECT p.precio INTO v_precio
+      FROM public.alumnos a JOIN public.planes p ON p.id = a.plan_id
+     WHERE a.usuario_id = p_alumno_id;
+    IF v_precio IS NULL THEN
+        RAISE EXCEPTION 'SIN_PLAN: el alumno no tiene un plan asignado';
+    END IF;
+
+    INSERT INTO public.ingresos (concepto, medio_pago, monto, alumno_id, turno_id, registrado_por, detalle)
+    VALUES ('Cuota', p_medio, v_precio, p_alumno_id, v_turno, auth.uid(),
+            'Cuota - ' || p_medio || CASE WHEN v_rol = 'SuperAdmin' THEN ' (cobrada por el dueño)' ELSE '' END);
+
+    RETURN public._extender_membresia(p_alumno_id);
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.registrar_pago_cuota(UUID, public.medio_pago) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.registrar_pago_cuota(UUID, public.medio_pago) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.registrar_pago_efectivo(p_alumno_id UUID)
+RETURNS date
+LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+    SELECT public.registrar_pago_cuota(p_alumno_id, 'Efectivo')
+$$;
+
+
+-- ---------------------------------------------------------------------
+-- 6. Turnos que el dueño haya abierto en las pruebas: se cierran sin arqueo
+-- ---------------------------------------------------------------------
+UPDATE public.turnos_caja t
+   SET cerrado_at = now(), monto_contado = t.monto_inicial, monto_esperado = t.monto_inicial,
+       comentario = 'Cerrado por migración: el dueño no usa caja'
+ WHERE t.cerrado_at IS NULL
+   AND t.usuario_id IN (SELECT id FROM public.usuarios WHERE rol = 'SuperAdmin');
+
+
+-- ---------------------------------------------------------------------
+-- 19.19 PAREJA A · A5 CIERRE OPCIÓN B Y AVISO AL DUEÑO (migración 20261112_02)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  A5 · Cierre de turno: qué ve la recepcionista y aviso al dueño
+--
+--  Correr en el SQL Editor de Supabase DESPUÉS de 20261111_03.
+--  Es re-ejecutable.
+--
+--  Decisión del equipo (12/11/2026) · opción B:
+--    · Al cerrar, la recepcionista ve SOLO si la caja cierra justo, sobra
+--      o falta, y cuánto. No ve el efectivo cobrado ni el esperado.
+--      (La función ya no los devuelve.)
+--    · Los cierres con diferencia le aparecen al DUEÑO como aviso dentro
+--      de la app (pantalla Ingresos) hasta que los marca como revisados.
+--      El aviso por mail queda como mejora futura.
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- 1. Revisión del dueño
+-- ---------------------------------------------------------------------
+ALTER TABLE public.turnos_caja ADD COLUMN IF NOT EXISTS revisado_at  TIMESTAMPTZ;
+ALTER TABLE public.turnos_caja ADD COLUMN IF NOT EXISTS revisado_por UUID REFERENCES public.usuarios(id);
+
+
+-- ---------------------------------------------------------------------
+-- 2. cerrar_turno devuelve solo la diferencia (cambia lo que devuelve)
+-- ---------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.cerrar_turno(NUMERIC, TEXT);
+
+CREATE FUNCTION public.cerrar_turno(p_monto_contado NUMERIC, p_comentario TEXT DEFAULT NULL)
+RETURNS TABLE (turno_id UUID, diferencia NUMERIC)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_turno   public.turnos_caja;
+    v_cobrado NUMERIC;
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista}');
+    IF p_monto_contado IS NULL OR p_monto_contado < 0 THEN
+        RAISE EXCEPTION 'MONTO_CONTADO_INVALIDO';
+    END IF;
+
+    SELECT * INTO v_turno FROM public.turnos_caja t
+     WHERE t.usuario_id = auth.uid() AND t.cerrado_at IS NULL
+       FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'SIN_TURNO_ABIERTO'; END IF;
+
+    SELECT coalesce(sum(i.monto), 0) INTO v_cobrado
+      FROM public.ingresos i
+     WHERE i.turno_id = v_turno.id AND i.medio_pago = 'Efectivo';
+
+    UPDATE public.turnos_caja t
+       SET cerrado_at     = now(),
+           monto_contado  = p_monto_contado,
+           monto_esperado = v_turno.monto_inicial + v_cobrado,
+           comentario     = nullif(trim(p_comentario), '')
+     WHERE t.id = v_turno.id;
+
+    RETURN QUERY
+    SELECT v_turno.id, p_monto_contado - (v_turno.monto_inicial + v_cobrado);
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.cerrar_turno(NUMERIC, TEXT) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.cerrar_turno(NUMERIC, TEXT) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 3. Cierres para el dueño (con todos los montos) y marca de revisado
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW public.v_cierres_caja WITH (security_invoker = true) AS
+SELECT t.id, t.usuario_id, u.nombre || ' ' || u.apellido AS recepcionista,
+       t.abierto_at, t.cerrado_at, t.monto_inicial,
+       t.monto_esperado - t.monto_inicial AS efectivo_cobrado,
+       t.monto_esperado, t.monto_contado, t.diferencia, t.comentario,
+       t.revisado_at, t.revisado_por
+  FROM public.turnos_caja t
+  JOIN public.usuarios u ON u.id = t.usuario_id
+ WHERE t.cerrado_at IS NOT NULL
+   AND public.mi_rol() = 'SuperAdmin';
+GRANT SELECT ON public.v_cierres_caja TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.marcar_cierre_revisado(p_turno_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    UPDATE public.turnos_caja
+       SET revisado_at = now(), revisado_por = auth.uid()
+     WHERE id = p_turno_id AND cerrado_at IS NOT NULL AND revisado_at IS NULL;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'CIERRE_YA_REVISADO';
+    END IF;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.marcar_cierre_revisado(UUID) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.marcar_cierre_revisado(UUID) TO authenticated;
+
+-- Los cierres sin diferencia no necesitan revisión
+UPDATE public.turnos_caja SET revisado_at = cerrado_at
+ WHERE cerrado_at IS NOT NULL AND diferencia = 0 AND revisado_at IS NULL;
+
+
+-- ---------------------------------------------------------------------
+-- 19.20 PAREJA A · A6 PERSONAL Y PASE LIBRE (migración 20261112_01)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  A6 · Personal y Pase Libre (CU15, RF12, RNF05) · Pareja A
+--
+--  Correr en el SQL Editor de Supabase DESPUÉS de 20261112_02.
+--  Es re-ejecutable.
+--
+--  Decisiones (12/11/2026):
+--    · PERSONAL: solo el dueño da de alta recepcionistas y coaches.
+--      Entran con su EMAIL real y una clave provisoria que genera el
+--      sistema; en el primer ingreso la cambian (debe_cambiar_clave).
+--      Los alumnos siguen entrando con DNI. El DNI del personal es
+--      opcional (así un profe puede tener además su cuenta de alumno).
+--    · PASE LIBRE: lo pueden asignar el dueño y la recepcionista (con
+--      motivo: el profe, la persona que elija el profe, etc.). No vence:
+--      lo QUITA solo el dueño. Queda registrado quién y cuándo.
+--      Un alumno con pase libre cuenta como Activo y al día: no aparece
+--      en alertas de cuota ni en invitaciones a retomar.
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- 1. Personal: DNI opcional para el staff
+-- ---------------------------------------------------------------------
+ALTER TABLE public.usuarios ALTER COLUMN dni DROP NOT NULL;
+ALTER TABLE public.usuarios DROP CONSTRAINT IF EXISTS chk_dni_alumno;
+ALTER TABLE public.usuarios ADD  CONSTRAINT chk_dni_alumno CHECK (rol <> 'Alumno' OR dni IS NOT NULL);
+
+
+-- Clave provisoria legible (sin 0/O, 1/l/I)
+CREATE OR REPLACE FUNCTION public._generar_clave() RETURNS TEXT
+LANGUAGE plpgsql VOLATILE SET search_path = public, extensions AS $$
+DECLARE
+    v_abc   TEXT := 'abcdefghjkmnpqrstuvwxyz23456789';
+    v_bytes BYTEA := extensions.gen_random_bytes(10);
+    v_clave TEXT := '';
+BEGIN
+    FOR i IN 0..9 LOOP
+        v_clave := v_clave || substr(v_abc, (get_byte(v_bytes, i) % length(v_abc)) + 1, 1);
+    END LOOP;
+    RETURN v_clave;
+END $$;
+REVOKE EXECUTE ON FUNCTION public._generar_clave() FROM PUBLIC, anon, authenticated;
+
+
+-- Valida que el id sea de personal editable (Recepcionista o Coach)
+CREATE OR REPLACE FUNCTION public._personal_editable(p_id UUID) RETURNS public.usuarios
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_u public.usuarios;
+BEGIN
+    SELECT * INTO v_u FROM public.usuarios WHERE id = p_id AND rol IN ('Recepcionista', 'Coach');
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'PERSONAL_INEXISTENTE';
+    END IF;
+    RETURN v_u;
+END $$;
+REVOKE EXECUTE ON FUNCTION public._personal_editable(UUID) FROM PUBLIC, anon, authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 2. Alta de personal (solo SuperAdmin). Devuelve el id y la clave provisoria.
+-- ---------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.alta_personal(TEXT, TEXT, TEXT, TEXT, public.rol_usuario);
+
+CREATE FUNCTION public.alta_personal(
+    p_email    TEXT,
+    p_nombre   TEXT,
+    p_apellido TEXT,
+    p_telefono TEXT,
+    p_rol      public.rol_usuario
+)
+RETURNS TABLE (usuario_id UUID, clave TEXT)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions, auth AS $$
+DECLARE
+    v_email    TEXT := public._normalizar_email(p_email);
+    v_nombre   TEXT := trim(coalesce(p_nombre, ''));
+    v_apellido TEXT := trim(coalesce(p_apellido, ''));
+    v_telefono TEXT := nullif(regexp_replace(coalesce(p_telefono, ''), '\D', '', 'g'), '');
+    v_clave    TEXT := public._generar_clave();
+    v_id       UUID := gen_random_uuid();
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    IF p_rol NOT IN ('Recepcionista', 'Coach') THEN
+        RAISE EXCEPTION 'ROL_INVALIDO: %', p_rol;
+    END IF;
+    IF v_email IS NULL THEN
+        RAISE EXCEPTION 'EMAIL_REQUERIDO';
+    END IF;
+    IF v_nombre = '' OR v_apellido = '' THEN
+        RAISE EXCEPTION 'DATOS_REQUERIDOS: nombre y apellido';
+    END IF;
+    IF v_telefono IS NOT NULL AND length(v_telefono) < 10 THEN
+        RAISE EXCEPTION 'CELULAR_INVALIDO: %', p_telefono;
+    END IF;
+    IF EXISTS (SELECT 1 FROM auth.users WHERE lower(email) = v_email) THEN
+        RAISE EXCEPTION 'EMAIL_EXISTENTE: %', v_email;
+    END IF;
+
+    INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password,
+                            email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+                            created_at, updated_at, confirmation_token, email_change,
+                            email_change_token_new, recovery_token, email_change_token_current,
+                            phone_change, phone_change_token, reauthentication_token)
+    VALUES ('00000000-0000-0000-0000-000000000000', v_id, 'authenticated', 'authenticated',
+            v_email, extensions.crypt(v_clave, extensions.gen_salt('bf')), now(),
+            jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email'),
+                               'rol', p_rol),
+            jsonb_build_object('nombre', v_nombre, 'apellido', v_apellido,
+                               'telefono', v_telefono, 'email_contacto', v_email),
+            now(), now(), '', '', '', '', '', '', '', '');
+
+    INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider,
+                                 last_sign_in_at, created_at, updated_at)
+    VALUES (gen_random_uuid(), v_id, v_id::text,
+            jsonb_build_object('sub', v_id::text, 'email', v_email, 'email_verified', true),
+            'email', NULL, now(), now());
+
+    UPDATE public.usuarios SET debe_cambiar_clave = TRUE WHERE id = v_id;
+
+    RETURN QUERY SELECT v_id, v_clave;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.alta_personal(TEXT, TEXT, TEXT, TEXT, public.rol_usuario) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.alta_personal(TEXT, TEXT, TEXT, TEXT, public.rol_usuario) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 3. Editar personal (solo SuperAdmin). Si cambia el email, cambia el login.
+-- ---------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.editar_personal(UUID, TEXT, TEXT, TEXT, TEXT, public.rol_usuario);
+
+CREATE FUNCTION public.editar_personal(
+    p_id       UUID,
+    p_email    TEXT,
+    p_nombre   TEXT,
+    p_apellido TEXT,
+    p_telefono TEXT,
+    p_rol      public.rol_usuario
+)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth AS $$
+DECLARE
+    v_u        public.usuarios;
+    v_email    TEXT := public._normalizar_email(p_email);
+    v_nombre   TEXT := trim(coalesce(p_nombre, ''));
+    v_apellido TEXT := trim(coalesce(p_apellido, ''));
+    v_telefono TEXT := nullif(regexp_replace(coalesce(p_telefono, ''), '\D', '', 'g'), '');
+    v_login    TEXT;
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    v_u := public._personal_editable(p_id);
+    IF p_rol NOT IN ('Recepcionista', 'Coach') THEN
+        RAISE EXCEPTION 'ROL_INVALIDO: %', p_rol;
+    END IF;
+    IF v_email IS NULL THEN
+        RAISE EXCEPTION 'EMAIL_REQUERIDO';
+    END IF;
+    IF v_nombre = '' OR v_apellido = '' THEN
+        RAISE EXCEPTION 'DATOS_REQUERIDOS: nombre y apellido';
+    END IF;
+    IF v_telefono IS NOT NULL AND length(v_telefono) < 10 THEN
+        RAISE EXCEPTION 'CELULAR_INVALIDO: %', p_telefono;
+    END IF;
+    -- Una recepcionista con la caja abierta no puede pasar a coach
+    IF v_u.rol = 'Recepcionista' AND p_rol <> 'Recepcionista'
+       AND EXISTS (SELECT 1 FROM public.turnos_caja WHERE usuario_id = p_id AND cerrado_at IS NULL) THEN
+        RAISE EXCEPTION 'TURNO_ABIERTO';
+    END IF;
+
+    SELECT email INTO v_login FROM auth.users WHERE id = p_id;
+    IF lower(v_login) <> v_email THEN
+        IF EXISTS (SELECT 1 FROM auth.users WHERE lower(email) = v_email AND id <> p_id) THEN
+            RAISE EXCEPTION 'EMAIL_EXISTENTE: %', v_email;
+        END IF;
+        UPDATE auth.users SET email = v_email, updated_at = now() WHERE id = p_id;
+        UPDATE auth.identities
+           SET identity_data = identity_data || jsonb_build_object('email', v_email), updated_at = now()
+         WHERE user_id = p_id AND provider = 'email';
+    END IF;
+
+    UPDATE public.usuarios
+       SET nombre = v_nombre, apellido = v_apellido, telefono = v_telefono,
+           email_contacto = v_email, rol = p_rol
+     WHERE id = p_id;
+    UPDATE auth.users
+       SET raw_app_meta_data = raw_app_meta_data || jsonb_build_object('rol', p_rol)
+     WHERE id = p_id;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.editar_personal(UUID, TEXT, TEXT, TEXT, TEXT, public.rol_usuario) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.editar_personal(UUID, TEXT, TEXT, TEXT, TEXT, public.rol_usuario) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 4. Baja / reactivación y nueva clave provisoria (solo SuperAdmin)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.cambiar_estado_personal(p_id UUID, p_activo BOOLEAN)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    PERFORM public._personal_editable(p_id);
+    IF NOT p_activo AND EXISTS (SELECT 1 FROM public.turnos_caja WHERE usuario_id = p_id AND cerrado_at IS NULL) THEN
+        RAISE EXCEPTION 'TURNO_ABIERTO';
+    END IF;
+    UPDATE public.usuarios SET activo = p_activo WHERE id = p_id;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.restablecer_clave_personal(p_id UUID)
+RETURNS TEXT
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions, auth AS $$
+DECLARE v_clave TEXT := public._generar_clave();
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    PERFORM public._personal_editable(p_id);
+    UPDATE auth.users
+       SET encrypted_password = extensions.crypt(v_clave, extensions.gen_salt('bf')), updated_at = now()
+     WHERE id = p_id;
+    UPDATE public.usuarios SET debe_cambiar_clave = TRUE WHERE id = p_id;
+    RETURN v_clave;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.cambiar_estado_personal(UUID, BOOLEAN), public.restablecer_clave_personal(UUID) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.cambiar_estado_personal(UUID, BOOLEAN), public.restablecer_clave_personal(UUID) TO authenticated;
+
+
+-- Listado de personal con su email de ingreso (solo SuperAdmin)
+CREATE OR REPLACE VIEW public.v_personal WITH (security_invoker = true) AS
+SELECT u.id, u.nombre, u.apellido, u.telefono, u.rol, u.activo, u.debe_cambiar_clave,
+       u.email_contacto AS email, u.created_at
+  FROM public.usuarios u
+ WHERE u.rol IN ('SuperAdmin', 'Recepcionista', 'Coach')
+   AND public.mi_rol() = 'SuperAdmin';
+GRANT SELECT ON public.v_personal TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 5. Pase Libre
+-- ---------------------------------------------------------------------
+ALTER TABLE public.alumnos ADD COLUMN IF NOT EXISTS pase_libre        BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.alumnos ADD COLUMN IF NOT EXISTS pase_libre_motivo TEXT;
+ALTER TABLE public.alumnos ADD COLUMN IF NOT EXISTS pase_libre_por    UUID REFERENCES public.usuarios(id);
+ALTER TABLE public.alumnos ADD COLUMN IF NOT EXISTS pase_libre_at     TIMESTAMPTZ;
+-- (sin GRANT UPDATE: solo se cambian con las funciones de abajo)
+
+-- Historial: quién lo dio o lo quitó, cuándo y por qué
+CREATE TABLE IF NOT EXISTS public.pase_libre_historial (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    alumno_id   UUID NOT NULL REFERENCES public.alumnos(usuario_id) ON DELETE CASCADE,
+    activo      BOOLEAN NOT NULL,
+    motivo      TEXT,
+    usuario_id  UUID NOT NULL REFERENCES public.usuarios(id),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.pase_libre_historial ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS pase_libre_historial_select ON public.pase_libre_historial;
+CREATE POLICY pase_libre_historial_select ON public.pase_libre_historial FOR SELECT TO authenticated
+    USING (public.mi_rol() IN ('Recepcionista', 'SuperAdmin'));
+REVOKE INSERT, UPDATE, DELETE ON public.pase_libre_historial FROM anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.asignar_pase_libre(p_alumno_id UUID, p_motivo TEXT)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_motivo TEXT := trim(coalesce(p_motivo, ''));
+BEGIN
+    PERFORM public._exigir_rol('{Recepcionista,SuperAdmin}');
+    PERFORM public._alumno_existente(p_alumno_id);
+    IF v_motivo = '' THEN
+        RAISE EXCEPTION 'MOTIVO_PASE_REQUERIDO';
+    END IF;
+    UPDATE public.alumnos
+       SET pase_libre = TRUE, pase_libre_motivo = v_motivo,
+           pase_libre_por = auth.uid(), pase_libre_at = now()
+     WHERE usuario_id = p_alumno_id;
+    INSERT INTO public.pase_libre_historial (alumno_id, activo, motivo, usuario_id)
+    VALUES (p_alumno_id, TRUE, v_motivo, auth.uid());
+END $$;
+
+CREATE OR REPLACE FUNCTION public.quitar_pase_libre(p_alumno_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    PERFORM public._alumno_existente(p_alumno_id);
+    UPDATE public.alumnos
+       SET pase_libre = FALSE, pase_libre_motivo = NULL, pase_libre_por = auth.uid(), pase_libre_at = now()
+     WHERE usuario_id = p_alumno_id AND pase_libre;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'SIN_PASE_LIBRE';
+    END IF;
+    INSERT INTO public.pase_libre_historial (alumno_id, activo, motivo, usuario_id)
+    VALUES (p_alumno_id, FALSE, NULL, auth.uid());
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.asignar_pase_libre(UUID, TEXT), public.quitar_pase_libre(UUID) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.asignar_pase_libre(UUID, TEXT), public.quitar_pase_libre(UUID) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 6. v_membresias: pase_libre y pase_libre_motivo AL FINAL
+--    (B6 ya lee pase_libre). Con pase libre el alumno es Activo.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW public.v_membresias WITH (security_invoker = true) AS
+SELECT
+    u.id                                       AS alumno_id,
+    u.dni, u.nombre, u.apellido, u.telefono,
+    p.id                                       AS plan_id,
+    p.nombre                                   AS plan,
+    p.precio                                   AS precio_plan,
+    a.fecha_vencimiento,
+    a.fecha_vencimiento - public.hoy_ar()      AS dias_restantes,
+    CASE
+        WHEN a.fecha_vencimiento IS NULL                     THEN 'Sin membresía'
+        WHEN a.fecha_vencimiento <  public.hoy_ar()          THEN 'Vencida'
+        WHEN a.fecha_vencimiento <= public.hoy_ar() + 3      THEN 'Por vencer'
+        ELSE 'Al día'
+    END                                        AS estado_membresia,
+    c.fecha_vencimiento                        AS certificado_vencimiento,
+    CASE
+        WHEN c.fecha_vencimiento IS NULL                     THEN 'Sin certificado'
+        WHEN c.fecha_vencimiento <  public.hoy_ar()          THEN 'Vencido'
+        WHEN c.fecha_vencimiento <= public.hoy_ar() + 15     THEN 'Por vencer'
+        ELSE 'Vigente'
+    END                                        AS estado_certificado,
+    CASE
+        WHEN a.pase_libre                                    THEN 'Activo'
+        WHEN a.fecha_vencimiento IS NULL                     THEN 'En clase de prueba'
+        WHEN a.fecha_vencimiento <  public.hoy_ar() - 30     THEN 'Inactivo'
+        ELSE 'Activo'
+    END                                        AS estado_alumno,
+    a.fecha_clase_prueba,
+    u.email_contacto                           AS email,
+    a.domicilio,
+    array_remove(ARRAY[
+        CASE WHEN u.email_contacto IS NULL                       THEN 'email' END,
+        CASE WHEN a.fecha_nacimiento IS NULL                     THEN 'fecha de nacimiento' END,
+        CASE WHEN coalesce(trim(a.domicilio), '') = ''           THEN 'domicilio' END,
+        CASE WHEN coalesce(trim(a.contacto_emergencia), '') = '' THEN 'contacto de emergencia' END
+    ], NULL)                                   AS datos_faltantes,
+    a.pase_libre,
+    a.pase_libre_motivo
+FROM public.usuarios u
+JOIN public.alumnos a        ON a.usuario_id = u.id
+LEFT JOIN public.planes p    ON p.id = a.plan_id
+LEFT JOIN LATERAL (
+    SELECT ca.fecha_vencimiento FROM public.certificados_aptos ca
+     WHERE ca.alumno_id = u.id ORDER BY ca.fecha_vencimiento DESC LIMIT 1
+) c ON TRUE
+WHERE u.activo;
+
+
+-- Alertas de cuota: sin los que tienen pase libre (el certificado sí se sigue pidiendo)
+CREATE OR REPLACE VIEW public.v_alertas WITH (security_invoker = true) AS
+SELECT alumno_id, dni, nombre, apellido, telefono, 'Membresía'::text AS tipo,
+       estado_membresia AS estado, fecha_vencimiento AS vence, dias_restantes
+  FROM public.v_membresias
+ WHERE estado_alumno = 'Activo'
+   AND NOT pase_libre
+   AND estado_membresia IN ('Por vencer', 'Vencida')
+UNION ALL
+SELECT alumno_id, dni, nombre, apellido, telefono, 'Certificado',
+       estado_certificado, certificado_vencimiento,
+       certificado_vencimiento - public.hoy_ar()
+  FROM public.v_membresias
+ WHERE estado_alumno <> 'Inactivo'
+   AND estado_certificado IN ('Por vencer', 'Vencido', 'Sin certificado');
+
+
+-- ---------------------------------------------------------------------
+-- 19.21 PAREJA A · A7 DASHBOARD DE INGRESOS (migración 20261112_03)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  A7 · Dashboard de ingresos (CU12, RF07, RF14, RNF01) · Pareja A
+--
+--  Correr en el SQL Editor de Supabase DESPUÉS de 20261112_01.
+--  Es re-ejecutable.
+--
+--    · v_movimientos: cada ingreso con fecha local, quién lo cobró, a
+--      quién y, en el kiosco, qué productos se vendieron (solo
+--      SuperAdmin; el resto de los roles no ve filas).
+--    · configuracion_admin: una sola fila con el link a la planilla de
+--      Google Sheets de la administración (RF14). Solo el dueño la ve y
+--      la cambia (RNF05).
+-- =====================================================================
+
+
+-- ---------------------------------------------------------------------
+-- 1. Movimientos (detalle de ingresos para el dashboard y el CSV)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE VIEW public.v_movimientos WITH (security_invoker = true) AS
+SELECT i.id,
+       (i.created_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS fecha,
+       i.created_at,
+       i.concepto,
+       i.medio_pago,
+       i.monto,
+       coalesce(i.detalle, vi.productos)                              AS detalle,
+       r.nombre || ' ' || r.apellido                                   AS cobrado_por,
+       r.rol                                                           AS rol_cobro,
+       a.nombre || ' ' || a.apellido                                   AS alumno,
+       i.turno_id IS NULL AND i.medio_pago = 'Efectivo'                AS fuera_de_caja,
+       i.turno_id,                                    -- detalle del cierre de caja
+       i.registrado_por
+  FROM public.ingresos i
+  JOIN public.usuarios r      ON r.id = i.registrado_por
+  LEFT JOIN public.usuarios a ON a.id = i.alumno_id
+  -- Kiosco: qué se vendió, ej. "2× Gatorade 500 ml, 1× Barra de cereal"
+  LEFT JOIN LATERAL (
+        SELECT string_agg(it.cantidad || '× ' || p.nombre, ', ' ORDER BY p.nombre) AS productos
+          FROM public.venta_items it
+          JOIN public.productos p ON p.id = it.producto_id
+         WHERE it.venta_id = i.venta_id
+       ) vi ON i.venta_id IS NOT NULL
+ WHERE public.mi_rol() = 'SuperAdmin';
+GRANT SELECT ON public.v_movimientos TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 2. Link a la planilla de Google Sheets (RF14)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.configuracion_admin (
+    id            BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),   -- una sola fila
+    planilla_url  TEXT CHECK (planilla_url IS NULL OR planilla_url ~ '^https://'),
+    actualizado_at  TIMESTAMPTZ,
+    actualizado_por UUID REFERENCES public.usuarios(id)
+);
+INSERT INTO public.configuracion_admin (id) VALUES (TRUE) ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE public.configuracion_admin ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS configuracion_admin_select ON public.configuracion_admin;
+CREATE POLICY configuracion_admin_select ON public.configuracion_admin FOR SELECT TO authenticated
+    USING (public.mi_rol() = 'SuperAdmin');
+REVOKE INSERT, UPDATE, DELETE ON public.configuracion_admin FROM anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.guardar_planilla_url(p_url TEXT)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_url TEXT := nullif(trim(coalesce(p_url, '')), '');
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    IF v_url IS NOT NULL AND v_url !~ '^https://' THEN
+        RAISE EXCEPTION 'URL_INVALIDA';
+    END IF;
+    UPDATE public.configuracion_admin
+       SET planilla_url = v_url, actualizado_at = now(), actualizado_por = auth.uid()
+     WHERE id;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.guardar_planilla_url(TEXT) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.guardar_planilla_url(TEXT) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 19.22 PAREJA A · KIOSCO: VENCIMIENTO Y AJUSTE DE STOCK (migración 20261112_04)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  Kiosco · vencimiento y ajuste de stock con − / + · Pareja A
+--
+--  Correr en el SQL Editor de Supabase DESPUÉS de 20261112_03.
+--  Es re-ejecutable.
+--
+--    · productos.vencimiento: fecha de vencimiento OPCIONAL.
+--    · ajustar_stock(producto, delta): suma o resta unidades (el − / +
+--      y la casilla de stock de Productos). Trabaja con la diferencia y
+--      no con el número final, así no pisa una venta que entre al mismo
+--      tiempo. Solo SuperAdmin; el stock nunca queda negativo.
+-- =====================================================================
+
+ALTER TABLE public.productos ADD COLUMN IF NOT EXISTS vencimiento DATE;
+
+CREATE OR REPLACE FUNCTION public.ajustar_stock(p_producto_id UUID, p_delta INTEGER)
+RETURNS INTEGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_stock INTEGER;
+BEGIN
+    PERFORM public._exigir_rol('{SuperAdmin}');
+    IF p_delta IS NULL THEN
+        RAISE EXCEPTION 'CANTIDAD_INVALIDA';
+    END IF;
+    SELECT stock INTO v_stock FROM public.productos WHERE id = p_producto_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'PRODUCTO_INEXISTENTE: %', p_producto_id;
+    END IF;
+    IF v_stock + p_delta < 0 THEN
+        RAISE EXCEPTION 'STOCK_NEGATIVO';
+    END IF;
+    UPDATE public.productos SET stock = stock + p_delta
+     WHERE id = p_producto_id
+    RETURNING stock INTO v_stock;
+    RETURN v_stock;
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.ajustar_stock(UUID, INTEGER) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.ajustar_stock(UUID, INTEGER) TO authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- 19.23 PAREJA A · KIOSCO: CATEGORÍA BEBIDA / OTRO (migración 20261112_05)
+-- ---------------------------------------------------------------------
+
+-- =====================================================================
+--  Kiosco · categoría de producto (Bebida u Otro) · Pareja A
+--
+--  Correr en el SQL Editor de Supabase DESPUÉS de 20261112_04.
+--  Es re-ejecutable.
+--
+--    · productos.categoria: 'Bebida' u 'Otro' (por defecto 'Otro').
+--      La venta del kiosco filtra por Todo · Bebidas · Otros productos.
+--    · La primera vez adivina las bebidas por el nombre (agua, gaseosa,
+--      jugo, etc.). El dueño lo corrige desde Productos con el lápiz.
+-- =====================================================================
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'productos' AND column_name = 'categoria') THEN
+        ALTER TABLE public.productos
+            ADD COLUMN categoria TEXT NOT NULL DEFAULT 'Otro' CHECK (categoria IN ('Bebida', 'Otro'));
+        UPDATE public.productos SET categoria = 'Bebida'
+         WHERE nombre ~* '(agua|gaseosa|bebida|jugo|gatorade|powerade|coca|sprite|fanta|pepsi|seven|7up|cerveza|energ|monster|red ?bull|isot|soda|t[eé] frío|limonada|\mml\M|\ml\M|litro)';
+    END IF;
+END $$;
+-- 19.24 PAREJA B · B4 APTO MÉDICO: CARGA DEL ALUMNO Y APROBACIÓN (migración 20261112_03)
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
@@ -2721,7 +3824,7 @@ GRANT  EXECUTE ON FUNCTION public.rechazar_certificado(UUID, TEXT) TO authentica
 
 
 -- ---------------------------------------------------------------------
--- 19.16 PAREJA B · B1 UN DÍA DE RUTINA POR FECHA (migración 20261112_04)
+-- 19.25 PAREJA B · B1 UN DÍA DE RUTINA POR FECHA (migración 20261112_04)
 -- ---------------------------------------------------------------------
 
 -- =====================================================================
@@ -2747,7 +3850,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_un_dia_por_fecha
 
 
 -- ---------------------------------------------------------------------
--- 19.17 PAREJA B · B4 CUENTA A LA QUE TRANSFIRIÓ EL ALUMNO (migración 20261112_05)
+-- 19.26 PAREJA B · B4 CUENTA A LA QUE TRANSFIRIÓ EL ALUMNO (migración 20261112_05)
 -- ---------------------------------------------------------------------
 
 -- =====================================================================

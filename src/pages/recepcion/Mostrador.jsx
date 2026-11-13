@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, hoyAR, linkWhatsApp, mensajeError, MENSAJES_WHATSAPP } from '../../lib/utils'
-import { buscarParaCheckin, horaAR, situacionCheckin, tienePaseLibre, TONOS } from '../../lib/checkin'
+import { buscarParaCheckin, faltaParaBuscar, horaAR, situacionCheckin, tienePaseLibre, TONOS } from '../../lib/checkin'
 import Cargando from '../../components/Cargando'
 
 // Mostrador de recepción:
@@ -110,7 +110,11 @@ function CheckIn({ alumnos }) {
         className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 text-lg outline-none focus:border-neutral-400"
       />
 
-      {busqueda.trim() && resultados.length === 0 && (
+      {faltaParaBuscar(busqueda) && (
+        <p className="px-1 text-sm text-neutral-500">{faltaParaBuscar(busqueda)}</p>
+      )}
+
+      {busqueda.trim() && !faltaParaBuscar(busqueda) && resultados.length === 0 && (
         <p className="px-1 text-sm text-neutral-500">No encontramos a nadie con "{busqueda.trim()}". Si es nuevo, dalo de alta en Alumnos.</p>
       )}
 

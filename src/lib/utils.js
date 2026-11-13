@@ -32,6 +32,16 @@ export const hoyAR = () =>
 export const CATEGORIAS_EJERCICIO = ['Tracción', 'Empuje', 'Core', 'Piernas', 'Movilidad', 'Skill']
 export const BLOQUES_EJERCICIO = ['Entrada en calor', 'Fuerza', 'Accesorios', 'Estiramientos']
 
+// "12/11 20:15" en hora de Argentina
+export const formatearFechaHora = (iso) =>
+  new Date(iso).toLocaleString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+
+// "20:15" en hora de Argentina
+export const formatearHoraAR = (iso) =>
+  new Date(iso).toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hour12: false })
+
 export const formatearPesos = (n) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n ?? 0)
 
@@ -77,6 +87,22 @@ const MENSAJES = {
   EMAIL_REQUERIDO: 'El email es obligatorio.',
   FICHA_INCOMPLETA: 'Falta completar la ficha del alumno (fecha de nacimiento, domicilio y contacto de emergencia) antes de cobrar la primera cuota.',
   FECHA_NACIMIENTO_INVALIDA: 'Revisá la fecha de nacimiento.',
+  CANTIDAD_INVALIDA: 'La cantidad tiene que ser un número mayor a 0.',
+  STOCK_NEGATIVO: 'El stock no puede quedar en menos de 0.',
+  PRODUCTO_INEXISTENTE: 'Ese producto ya no existe. Recargá la pantalla.',
+  ESPACIO_INEXISTENTE: 'Ese salón ya no está disponible. Recargá la pantalla.',
+  LOCATARIO_REQUERIDO: 'Escribí quién alquila.',
+  HORAS_INVALIDAS: 'Las horas tienen que ser entre 0,5 y 24, en medias horas.',
+  SIN_PRECIO_MENSUAL: 'Ese salón no tiene precio mensual. Pedile al dueño que lo cargue.',
+  PERIODO_REQUERIDO: 'Elegí el mes que paga.',
+  MODALIDAD_INVALIDA: 'Elegí si es por hora o mensual.',
+  MONTO_CONTADO_INVALIDO: 'Ingresá el efectivo que contaste (0 o más).',
+  NO_SE_PUEDE_JUSTIFICAR: 'Ese cierre ya tiene una justificación o no tiene diferencia.',
+  PERSONAL_INEXISTENTE: 'Esa persona no es parte del personal editable.',
+  ROL_INVALIDO: 'Elegí Recepcionista o Coach.',
+  MOTIVO_PASE_REQUERIDO: 'Escribí el motivo del pase libre (ej.: profe, pareja del profe).',
+  SIN_PASE_LIBRE: 'Ese alumno no tiene pase libre.',
+  CIERRE_YA_REVISADO: 'Ese cierre ya estaba revisado.',
 }
 export const mensajeError = (error) => {
   if (!error) return ''

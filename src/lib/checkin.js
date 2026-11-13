@@ -7,13 +7,23 @@ import { normalizar } from './filtroAlumnos.js'
 
 const soloDigitos = (t) => String(t ?? '').replace(/\D/g, '')
 
+const esConsultaDni = (consulta) => soloDigitos(consulta).length > 0 && /^[\d.\s]+$/.test(String(consulta ?? '').trim())
+
+// Mínimo para empezar a buscar: 3 números de DNI o 2 letras de nombre.
+// Devuelve el texto de ayuda si todavía falta escribir, o null si ya se puede buscar.
+export function faltaParaBuscar(consulta) {
+  if (!String(consulta ?? '').trim()) return null
+  if (esConsultaDni(consulta)) return soloDigitos(consulta).length < 3 ? 'Escribí al menos 3 números del DNI.' : null
+  return normalizar(consulta).length < 2 ? 'Escribí al menos 2 letras del nombre.' : null
+}
+
 // Busca por DNI (con o sin puntos) o por nombre/apellido (sin importar tildes ni el orden).
 // Orden: DNI exacto → DNI que empieza igual → apellido/nombre que empieza igual → resto.
 export function buscarParaCheckin(alumnos, consulta, limite = 6) {
   const q = normalizar(consulta)
   const digitos = soloDigitos(consulta)
-  const esDni = digitos.length > 0 && /^[\d.\s]+$/.test(String(consulta).trim())
-  if (esDni ? digitos.length < 3 : q.length < 2) return []
+  const esDni = esConsultaDni(consulta)
+  if (faltaParaBuscar(consulta)) return []
 
   const palabras = q.split(/\s+/).filter(Boolean)
   const puntaje = (a) => {

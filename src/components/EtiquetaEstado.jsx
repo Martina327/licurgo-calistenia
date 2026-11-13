@@ -7,6 +7,7 @@ const COLOR_CUOTA = {
   'Por vencer': 'bg-amber-950 text-amber-300',
   Vencida: 'bg-red-950 text-red-300',
   'Sin membresía': 'bg-neutral-800 text-neutral-300',
+  'Pase libre': 'bg-sky-950 text-sky-300',
 }
 
 const COLOR_ALUMNO = {

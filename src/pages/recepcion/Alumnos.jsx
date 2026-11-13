@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { esDniValido, formatearFecha, mensajeError } from '../../lib/utils'
+import { useAuth } from '../../context/AuthContext'
+import { esDniValido, formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import CampoFecha from '../../components/CampoFecha'
 import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 
 // Gestión de alumnos (CU01 · A1). Recepción y SuperAdmin.
@@ -14,7 +16,7 @@ import { EtiquetaAlumno, EtiquetaCuota } from '../../components/EtiquetaEstado'
 //     Ficha completa (nacimiento, domicilio, contacto de emergencia): obligatoria
 //     para pagar la primera cuota; la base lo controla en _extender_membresia.
 //   · Dados de baja: listado aparte con opción de reactivar (reactivar_alumno).
-const FILTROS = ['Todos', 'En clase de prueba', 'Activo', 'Inactivo', 'Dados de baja']
+const FILTROS = ['Todos', 'En clase de prueba', 'Activo', 'Inactivo', 'Pase libre', 'Dados de baja']
 
 export default function Alumnos() {
   const [alumnos, setAlumnos] = useState([])
@@ -22,7 +24,11 @@ export default function Alumnos() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [busqueda, setBusqueda] = useState('')
-  const [filtro, setFiltro] = useState('Todos')
+  // ?filtro=Activo: llega desde las tarjetas del Inicio del dueño
+  const [filtro, setFiltro] = useState(() => {
+    const f = new URLSearchParams(window.location.search).get('filtro')
+    return FILTROS.includes(f) ? f : 'Todos'
+  })
   const [mostrarAlta, setMostrarAlta] = useState(false)
   const [editando, setEditando] = useState(null) // fila del alumno que se está editando
   const [avisoOk, setAvisoOk] = useState('')
@@ -31,7 +37,7 @@ export default function Alumnos() {
     const [m, b] = await Promise.all([
       supabase
         .from('v_membresias')
-        .select('alumno_id, dni, nombre, apellido, telefono, estado_alumno, estado_membresia, fecha_vencimiento, dias_restantes, fecha_clase_prueba, datos_faltantes')
+        .select('alumno_id, dni, nombre, apellido, telefono, estado_alumno, estado_membresia, fecha_vencimiento, dias_restantes, fecha_clase_prueba, datos_faltantes, pase_libre, pase_libre_motivo')
         .order('apellido'),
       supabase.from('v_alumnos_baja').select('*').order('apellido'),
     ])
@@ -87,6 +93,7 @@ export default function Alumnos() {
   const conteo = useMemo(() => {
     const c = { Todos: alumnos.length, 'Dados de baja': bajas.length }
     for (const a of alumnos) c[a.estado_alumno] = (c[a.estado_alumno] ?? 0) + 1
+    c['Pase libre'] = alumnos.filter((a) => a.pase_libre).length
     return c
   }, [alumnos, bajas])
 
@@ -98,7 +105,10 @@ export default function Alumnos() {
   }, [busqueda])
 
   const visibles = useMemo(
-    () => alumnos.filter((a) => (filtro === 'Todos' || a.estado_alumno === filtro) && coincide(a)),
+    () =>
+      alumnos.filter(
+        (a) => (filtro === 'Todos' || (filtro === 'Pase libre' ? a.pase_libre : a.estado_alumno === filtro)) && coincide(a),
+      ),
     [alumnos, filtro, coincide],
   )
   const bajasVisibles = useMemo(() => bajas.filter(coincide), [bajas, coincide])
@@ -182,6 +192,9 @@ export default function Alumnos() {
                 <tr key={a.alumno_id} className="border-t border-neutral-800">
                   <td className="px-3 py-2">
                     <div className="font-medium">{a.apellido}, {a.nombre}</div>
+                    {a.pase_libre && (
+                      <div className="text-xs text-sky-300">Pase libre{a.pase_libre_motivo ? ` · ${a.pase_libre_motivo}` : ''}</div>
+                    )}
                     {a.datos_faltantes?.length > 0 && (
                       <div className="text-xs text-amber-400">Falta: {a.datos_faltantes.join(', ')}</div>
                     )}
@@ -189,7 +202,7 @@ export default function Alumnos() {
                   <td className="px-3 py-2">{a.dni}</td>
                   <td className="px-3 py-2">{a.telefono ?? '—'}</td>
                   <td className="px-3 py-2"><EtiquetaAlumno estado={a.estado_alumno} /></td>
-                  <td className="px-3 py-2"><EtiquetaCuota estado={a.estado_membresia} /></td>
+                  <td className="px-3 py-2"><EtiquetaCuota estado={a.pase_libre ? 'Pase libre' : a.estado_membresia} /></td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {a.estado_alumno === 'En clase de prueba'
                       ? <span className="text-neutral-500">Prueba el {formatearFecha(a.fecha_clase_prueba)}</span>
@@ -303,8 +316,9 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
   const [enviando, setEnviando] = useState(false)
   const [confirmarBaja, setConfirmarBaja] = useState(false)
 
-  // Si ya pagó alguna vez, la ficha completa es obligatoria; en clase de prueba se puede ir completando
-  const fichaObligatoria = alumno.estado_alumno !== 'En clase de prueba'
+  // Si ya pagó alguna vez, la ficha completa es obligatoria; si no, se puede ir completando
+  // (mismo criterio que editar_alumno en la base: tiene fecha de vencimiento)
+  const fichaObligatoria = Boolean(alumno.fecha_vencimiento)
 
   // v_membresias no trae nacimiento ni contacto de emergencia: se piden aparte
   useEffect(() => {
@@ -339,6 +353,7 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
     if (!esDniValido(dni)) return setError('El DNI tiene que tener 7 u 8 números.')
     if (telefono.length < 10) return setError('El celular tiene que tener código de área y número, sin el 0 ni el 15 (ej.: 3815551234).')
     if (!esEmailValido(datos.email_contacto.trim())) return setError('Ingresá un email válido.')
+    if (datos.fecha_nacimiento === null) return setError('Revisá la fecha de nacimiento (día/mes/año).')
     if (fichaObligatoria && (!datos.fecha_nacimiento || !datos.domicilio.trim() || !datos.contacto_emergencia.trim())) {
       return setError('Completá fecha de nacimiento, domicilio y contacto de emergencia.')
     }
@@ -417,7 +432,7 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm">
             <span className="text-neutral-400">Fecha de nacimiento</span>
-            <input type="date" value={datos.fecha_nacimiento} onChange={cambiar('fecha_nacimiento')} className={campo} />
+            <CampoFecha value={datos.fecha_nacimiento} onChange={cambiar('fecha_nacimiento')} max={hoyAR()} className={campo} />
           </label>
           <label className="space-y-1 text-sm">
             <span className="text-neutral-400">Domicilio</span>
@@ -429,6 +444,8 @@ function EditarAlumno({ alumno, alCancelar, alTerminar }) {
           </label>
         </div>
       </div>
+
+      <PaseLibre alumno={alumno} alTerminar={alTerminar} />
 
       <Aviso tipo="error" texto={error} />
 
@@ -499,6 +516,88 @@ function TablaBajas({ bajas, alReactivar }) {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------
+// Pase Libre (RF12 · A6): lo dan recepción y el dueño; lo quita solo el dueño
+// ---------------------------------------------------------------
+function PaseLibre({ alumno, alTerminar }) {
+  const { perfil } = useAuth()
+  const esDueno = perfil?.rol === 'SuperAdmin'
+  const [abierto, setAbierto] = useState(false)
+  const [motivo, setMotivo] = useState('')
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const nombre = `${alumno.nombre} ${alumno.apellido}`
+
+  const asignar = async () => {
+    setError('')
+    if (!motivo.trim()) return setError('Escribí el motivo (ej.: profe, pareja del profe).')
+    setEnviando(true)
+    const { error } = await supabase.rpc('asignar_pase_libre', { p_alumno_id: alumno.alumno_id, p_motivo: motivo.trim() })
+    setEnviando(false)
+    if (error) return setError(mensajeError(error))
+    alTerminar(`${nombre} tiene pase libre: cuenta como al día y no le llegan avisos de cuota.`)
+  }
+
+  const quitar = async () => {
+    setError('')
+    setEnviando(true)
+    const { error } = await supabase.rpc('quitar_pase_libre', { p_alumno_id: alumno.alumno_id })
+    setEnviando(false)
+    if (error) return setError(mensajeError(error))
+    alTerminar(`${nombre} ya no tiene pase libre: vuelve a pagar la cuota normalmente.`)
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-sky-900/60 bg-sky-950/20 p-3 text-sm">
+      {alumno.pase_libre ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sky-200">
+            <span className="font-medium">Pase libre</span>
+            {alumno.pase_libre_motivo ? ` · ${alumno.pase_libre_motivo}` : ''} · no vence
+          </p>
+          {esDueno ? (
+            <button type="button" onClick={quitar} disabled={enviando} className="text-red-400 hover:underline disabled:opacity-50">
+              Quitar pase libre
+            </button>
+          ) : (
+            <span className="text-xs text-neutral-400">Solo el dueño lo puede quitar.</span>
+          )}
+        </div>
+      ) : abierto ? (
+        <div className="space-y-2">
+          <label className="block space-y-1">
+            <span className="text-neutral-300">Motivo del pase libre</span>
+            <input
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              placeholder="Ej.: profe, pareja del profe"
+              className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 outline-none focus:border-neutral-400"
+              autoFocus
+            />
+          </label>
+          <p className="text-xs text-neutral-400">No paga cuota ni vence. Queda registrado quién lo dio. Solo el dueño lo puede quitar.</p>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => { setAbierto(false); setError('') }} className="rounded-lg border border-neutral-700 px-3 py-1.5 hover:bg-neutral-800">
+              Cancelar
+            </button>
+            <button type="button" onClick={asignar} disabled={enviando} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-neutral-950 disabled:opacity-50">
+              Dar pase libre
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-neutral-400">Sin pase libre.</p>
+          <button type="button" onClick={() => setAbierto(true)} className="text-sky-300 hover:underline">
+            Dar pase libre
+          </button>
+        </div>
+      )}
+      <Aviso tipo="error" texto={error} />
     </div>
   )
 }
