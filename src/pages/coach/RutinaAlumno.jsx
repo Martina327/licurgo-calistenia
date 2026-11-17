@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { formatearFecha, hoyAR, mensajeError } from '../../lib/utils'
 import { completadosEnSemana, lunesDe } from '../../lib/semana'
@@ -39,6 +39,16 @@ export default function RutinaAlumno() {
   const [plantillas, setPlantillas] = useState([])
   const [diasHechos, setDiasHechos] = useState(new Set()) // días que el alumno completó esta semana
   const [editando, setEditando] = useState(false)
+  // Día abierto en la vista (?dia=2): así el "atrás" del celular vuelve a la lista de días
+  const [params, setParams] = useSearchParams()
+  const diaAbierto = Number(params.get('dia')) || null
+  const navigate = useNavigate()
+  const abrirDia = (n) => {
+    if (n) return setParams({ dia: String(n) })
+    // Volver a la lista: si se llegó desde la lista, es un "atrás"; si se entró con el link directo, se reemplaza
+    if (window.history.state?.idx > 0) navigate(-1)
+    else setParams({}, { replace: true })
+  }
 
   const cargar = async () => {
     const [alumnoRes, ejerciciosRes, rutinaRes, obsRes, plantillasRes] = await Promise.all([
@@ -173,7 +183,7 @@ export default function RutinaAlumno() {
           <p className="text-xs text-neutral-500">Después podés pegar una planificación, un día o cada sección desde plantillas o desde otro alumno.</p>
         </div>
       ) : !editando ? (
-        <VistaRutina value={rutina} ejercicios={ejercicios} diasHechos={diasHechos} />
+        <VistaRutina value={rutina} ejercicios={ejercicios} diasHechos={diasHechos} dia={diaAbierto} onDia={abrirDia} />
       ) : (
         <>
           <EditorRutina key={editorKey} value={rutina} onChange={cambiar} ejercicios={ejercicios} diasHechos={diasHechos}
