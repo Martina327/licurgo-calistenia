@@ -10,6 +10,7 @@ import CambiarClave from './pages/CambiarClave'
 import DashboardIngresos from './pages/superadmin/DashboardIngresos'
 import DetalleCierre from './pages/superadmin/DetalleCierre'
 import Productos from './pages/superadmin/Productos'
+import Planes from './pages/superadmin/Planes'
 import Salones from './pages/superadmin/Salones'
 import Personal from './pages/superadmin/Personal'
 import DatosCobro from './pages/superadmin/DatosCobro'
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="/admin" element={<DashboardIngresos />} />
             <Route path="/admin/cierres/:id" element={<DetalleCierre />} />
             <Route path="/admin/productos" element={<Productos />} />
+            <Route path="/admin/planes" element={<Planes />} />
             <Route path="/admin/salones" element={<Salones />} />
             <Route path="/admin/personal" element={<Personal />} />
             <Route path="/admin/datos-cobro" element={<DatosCobro />} />

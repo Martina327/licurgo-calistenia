@@ -10,7 +10,7 @@ import ElegirArchivo from './ElegirArchivo'
 //   2. Se registra el comprobante en estado Pendiente.
 //   Si el paso 2 falla, se borra el archivo del paso 1 (la política solo deja borrar
 //   archivos propios que no quedaron registrados).
-export default function SubirComprobante({ alumnoId, montoSugerido, onSubido }) {
+export default function SubirComprobante({ alumnoId, montoSugerido, planId = null, onSubido }) {
   const [archivo, setArchivo] = useState(null)
   const [monto, setMonto] = useState(montoSugerido ? String(Math.round(montoSugerido)) : '')
   const [error, setError] = useState('')
@@ -33,7 +33,7 @@ export default function SubirComprobante({ alumnoId, montoSugerido, onSubido }) 
     }
     const { error: errAlta } = await supabase
       .from('comprobantes_pago')
-      .insert({ alumno_id: alumnoId, archivo_path: ruta, monto_declarado: montoDeclarado })
+      .insert({ alumno_id: alumnoId, archivo_path: ruta, monto_declarado: montoDeclarado, plan_id: planId })
     if (errAlta) {
       await supabase.storage.from(BUCKET).remove([ruta]) // no dejar el archivo suelto
       setEnviando(false)
@@ -58,6 +58,7 @@ export default function SubirComprobante({ alumnoId, montoSugerido, onSubido }) 
           <input value={monto} onChange={(e) => setMonto(e.target.value)} inputMode="decimal"
             className="w-full bg-transparent px-2 py-2.5 outline-none" />
         </div>
+        <span className="mt-1 block text-xs text-neutral-500">¿Pagás una parte en efectivo en recepción? Poné solo lo que transferiste.</span>
       </label>
 
       {error && <Aviso tipo="error" texto={error} />}
