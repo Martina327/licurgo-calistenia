@@ -1,13 +1,28 @@
 import { BLOQUES_EJERCICIO } from '../../lib/utils'
+import { Atras, Chevron } from '../Iconos'
 import { cadenas, descansoASeg, llevaDescanso, nombreCadena, textoDescanso } from '../../lib/rutinas'
 
 // Vista de solo lectura de la rutina (coach): lo mismo que arma el editor pero limpio,
 // para mirar rápido en el gimnasio sin los menús ni los campos de edición.
+// Como en la app del alumno: primero la lista de días y, al tocar uno, ese día en su propia pantalla.
 //   value:      estado del editor ({ nombre, objetivo, dias: [{ nombre, items }] })
 //   ejercicios: catálogo, para mostrar el nombre de cada ejercicio
 //   diasHechos: Set con los días que el alumno completó esta semana
-export default function VistaRutina({ value, ejercicios, diasHechos = new Set() }) {
+//   dia:        número del día abierto (null = la lista) · onDia(n | null) para abrir o volver
+export default function VistaRutina({ value, ejercicios, diasHechos = new Set(), dia = null, onDia }) {
   const nombres = new Map(ejercicios.map((e) => [e.id, e.nombre]))
+  const abierto = dia && value.dias[dia - 1]
+
+  if (abierto) {
+    return (
+      <div className="space-y-3">
+        <button onClick={() => onDia(null)} className="-ml-1 flex items-center gap-1 text-sm text-neutral-400 hover:text-white">
+          <Atras className="h-4 w-4" /> Todos los días
+        </button>
+        <Dia numero={dia} dia={abierto} nombres={nombres} hecho={diasHechos.has(dia)} />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -16,12 +31,37 @@ export default function VistaRutina({ value, ejercicios, diasHechos = new Set() 
         {value.objetivo && <p className="mt-0.5 text-sm text-neutral-400">🎯 {value.objetivo}</p>}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {value.dias.map((d, n) => (
-          <Dia key={d.key} numero={n + 1} dia={d} nombres={nombres} hecho={diasHechos.has(n + 1)} />
-        ))}
-      </div>
+      <ul className="space-y-2.5">
+        {value.dias.map((d, n) => {
+          const hecho = diasHechos.has(n + 1)
+          const cant = d.items.length
+          return (
+            <li key={d.key}>
+              <button onClick={() => onDia(n + 1)}
+                className="flex w-full items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3.5 text-left hover:border-neutral-600 active:bg-neutral-800">
+                <NumeroDia numero={n + 1} hecho={hecho} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">Día {n + 1}{d.nombre && ` · ${d.nombre}`}</span>
+                  <span className="block text-sm text-neutral-400">
+                    {cant ? `${cant} ejercicio${cant === 1 ? '' : 's'}` : 'Sin ejercicios'}
+                    {hecho && <span className="text-emerald-400"> · hecho esta semana</span>}
+                  </span>
+                </span>
+                <Chevron className="h-5 w-5 shrink-0 text-neutral-600" />
+              </button>
+            </li>
+          )
+        })}
+      </ul>
     </div>
+  )
+}
+
+function NumeroDia({ numero, hecho }) {
+  return (
+    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${hecho ? 'bg-emerald-900/60 text-emerald-300' : 'bg-neutral-800 text-neutral-300'}`}>
+      {hecho ? '✓' : numero}
+    </span>
   )
 }
 
@@ -30,9 +70,7 @@ function Dia({ numero, dia, nombres, hecho }) {
   return (
     <section className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900">
       <header className="flex items-center gap-3 border-b border-neutral-800 px-4 py-3">
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${hecho ? 'bg-emerald-900/60 text-emerald-300' : 'bg-neutral-800 text-neutral-300'}`}>
-          {hecho ? '✓' : numero}
-        </span>
+        <NumeroDia numero={numero} hecho={hecho} />
         <div className="min-w-0">
           <h2 className="truncate font-semibold">Día {numero}{dia.nombre && ` · ${dia.nombre}`}</h2>
           {hecho && <p className="text-xs text-emerald-400">Hecho esta semana</p>}

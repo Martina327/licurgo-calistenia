@@ -103,7 +103,7 @@ Sobre una base ya cargada se corren solo las migraciones, en orden:
 
 ## Vista de solo lectura (16/11)
 
-- Al entrar a la rutina de un alumno, el coach ve la rutina **en limpio** (`components/rutinas/VistaRutina.jsx`): cada día en una tarjeta con sus bloques, series × repeticiones, notas, descansos y bi-series. En la compu, los días en dos columnas; en el celular, uno abajo del otro.
+- Al entrar a la rutina de un alumno, el coach ve la rutina **en limpio** (`components/rutinas/VistaRutina.jsx`), igual que el alumno: primero la **lista de días** (nombre, cantidad de ejercicios y ✓ si lo hizo esta semana) y, al tocar uno, **ese día en su propia pantalla** con sus bloques, series × repeticiones, notas, descansos y bi-series. *‹ Todos los días* (o el "atrás" del celular, porque el día va en la URL como `?dia=2`) vuelve a la lista.
 - Para cambiar algo toca **Editar rutina** y se abre el editor de siempre. Al **Guardar** vuelve a la vista. **Salir de edición** vuelve sin cambios (si hay cambios sin guardar, pregunta antes de descartarlos).
 - Si el alumno no tiene rutina, sigue apareciendo **Armar rutina**, que abre directo el editor.
 
