@@ -62,6 +62,8 @@ const MENSAJES = {
   STOCK_INSUFICIENTE: 'No hay stock suficiente de uno de los productos.',
   COMPROBANTE_YA_REVISADO: 'Ese comprobante ya fue revisado.',
   SIN_PLAN: 'El alumno no tiene un plan asignado.',
+  PLAN_INACTIVO: 'Ese plan ya no está a la venta. Elegí otro.',
+  SUMA_NO_COINCIDE: 'Efectivo más transferencia tiene que dar el precio del plan.',
   MOTIVO_REQUERIDO: 'Indicá el motivo del rechazo.',
   FECHAS_CERTIFICADO_INVALIDAS: 'Revisá las fechas: la firma no puede ser futura y el vencimiento tiene que ser posterior.',
   CERTIFICADO_INEXISTENTE_O_YA_REVISADO: 'Ese apto ya fue revisado por otra persona.',

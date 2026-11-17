@@ -12,6 +12,9 @@ import { AYUDA_STOCK, ayudaVencimiento, buscarProductos, filtrarCategoria, FILTR
 
 // Caja (Pareja A). Recepción y SuperAdmin.
 //   A2 · Abrir el turno de caja con el monto inicial (el cambio que hay en la caja).
+//   B · Cobrar la cuota (12/11 → 16/11): se elige el plan y se cobra en efectivo, transferencia
+//        o mixto (cobrar_cuota). La parte por transferencia es la del comprobante que subió el
+//        alumno: recepción ve el monto que él informó y cobra el resto en efectivo.
 //   A2 · Cobrar la cuota en efectivo (CU06): registrar_pago_efectivo suma +30 días al
 //        vencimiento actual. En el primer pago el alumno pasa a Activo y la ficha tiene
 //        que estar completa: si falta algo se completa acá mismo antes de cobrar.
@@ -96,7 +99,7 @@ export default function Caja() {
       ) : turno ? (
         <>
           <TurnoAbierto turno={turno} alCerrar={() => setCerrando(true)} />
-          <div className="flex gap-1 overflow-x-auto border-b border-neutral-800">
+          <div className="flex gap-1 overflow-x-auto border-b border-neutral-800 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {PESTANAS.map((p) => (
               <button
                 key={p.id}
@@ -200,7 +203,7 @@ function TurnoAbierto({ turno, alCerrar }) {
 // Cobrar cuota en efectivo (CU06)
 // ---------------------------------------------------------------
 const CAMPOS_COBRO =
-  'alumno_id, dni, nombre, apellido, telefono, email, precio_plan, fecha_vencimiento, estado_alumno, estado_membresia, datos_faltantes, pase_libre'
+  'alumno_id, dni, nombre, apellido, telefono, email, plan_id, plan, precio_plan, fecha_vencimiento, estado_alumno, estado_membresia, datos_faltantes, pase_libre'
 
 // Mismo cálculo que _extender_membresia: +30 días al vencimiento actual.
 // Si nunca pagó o está inactivo (vencido hace más de 30 días), los 30 días cuentan desde hoy.
@@ -217,11 +220,22 @@ function CobrarCuota({ esDueno = false }) {
   const [ultimoCobro, setUltimoCobro] = useState(null)
   const [error, setError] = useState('')
 
+  const [planes, setPlanes] = useState([])
+  const [pendientes, setPendientes] = useState({}) // alumno_id → comprobante de transferencia sin revisar
+
   const cargar = useCallback(async () => {
-    const { data, error } = await supabase.from('v_membresias').select(CAMPOS_COBRO).order('apellido')
+    const [m, p, c] = await Promise.all([
+      supabase.from('v_membresias').select(CAMPOS_COBRO).order('apellido'),
+      supabase.from('planes').select('id, nombre, precio').eq('activo', true).order('precio', { ascending: false }),
+      supabase.from('v_comprobantes').select('id, alumno_id, archivo_path, monto_declarado, created_at, cuenta_destino, plan_id')
+        .eq('estado', 'Pendiente'),
+    ])
+    const error = m.error ?? p.error ?? c.error
     if (error) setError(mensajeError(error))
-    setAlumnos(data ?? [])
-    return data ?? []
+    setAlumnos(m.data ?? [])
+    setPlanes(p.data ?? [])
+    setPendientes(Object.fromEntries((c.data ?? []).map((x) => [x.alumno_id, x])))
+    return m.data ?? []
   }, [])
 
   useEffect(() => {
@@ -267,7 +281,7 @@ function CobrarCuota({ esDueno = false }) {
       {ultimoCobro && (
         <div className="rounded-xl border border-emerald-900 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-200">
           <p className="font-medium">
-            Cobro registrado: {ultimoCobro.nombre} {ultimoCobro.apellido} · {formatearPesos(ultimoCobro.monto)} · {ultimoCobro.medio}
+            Cobro registrado: {ultimoCobro.nombre} {ultimoCobro.apellido} · {ultimoCobro.plan} · {ultimoCobro.detalle}
           </p>
           <p className="text-emerald-300/80">
             Nuevo vencimiento: {formatearFecha(ultimoCobro.vencimiento)}
@@ -297,6 +311,9 @@ function CobrarCuota({ esDueno = false }) {
                     <p className="text-xs text-neutral-400">DNI {a.dni} · {a.estado_alumno}</p>
                   </div>
                   <div className="flex items-center gap-3">
+                    {pendientes[a.alumno_id] && (
+                      <span className="text-xs text-sky-300">Transfirió {formatearPesos(pendientes[a.alumno_id].monto_declarado)}</span>
+                    )}
                     <EtiquetaCuota estado={a.pase_libre ? 'Pase libre' : a.estado_membresia} />
                     <button onClick={() => elegir(a)} className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-neutral-950">
                       Cobrar
@@ -313,6 +330,8 @@ function CobrarCuota({ esDueno = false }) {
         <DetalleCobro
           esDueno={esDueno}
           alumno={elegido}
+          planes={planes}
+          comprobante={pendientes[elegido.alumno_id] ?? null}
           alCancelar={() => setElegido(null)}
           alCompletarFicha={refrescarElegido}
           alCobrar={alCobrar}
@@ -322,33 +341,74 @@ function CobrarCuota({ esDueno = false }) {
   )
 }
 
-function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar, esDueno }) {
-  const [medio, setMedio] = useState('Efectivo')
+// Cobro de una cuota: plan + cómo pagó.
+//   · Si el alumno subió un comprobante sin revisar, aparece con el monto que informó: esa es la
+//     parte por transferencia y el resto se cobra en efectivo (pago mixto). Se puede ver el comprobante.
+//   · Recepción no anota transferencias sin comprobante (regla de A2); el dueño sí.
+function DetalleCobro({ alumno, planes, comprobante, alCancelar, alCompletarFicha, alCobrar, esDueno }) {
+  const planInicial = planes.find((p) => p.id === comprobante?.plan_id) ?? planes.find((p) => p.id === alumno.plan_id) ?? planes[0]
+  const [planId, setPlanId] = useState(planInicial?.id ?? null)
+  const [usarComprobante, setUsarComprobante] = useState(Boolean(comprobante))
+  const [transferenciaTxt, setTransferenciaTxt] = useState(comprobante ? String(Math.round(comprobante.monto_declarado ?? 0)) : '')
+  const [modoDueno, setModoDueno] = useState('Efectivo') // sin comprobante: Efectivo · Transferencia · Mixto
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
+  const plan = planes.find((p) => p.id === planId) ?? null
+  const precio = Number(plan?.precio ?? 0)
   const primerPago = alumno.estado_alumno === 'En clase de prueba'
   const faltaFicha = primerPago && alumno.datos_faltantes?.length > 0
   const vuelveInactivo = alumno.estado_alumno === 'Inactivo'
   const base = primerPago || vuelveInactivo ? hoyAR() : alumno.fecha_vencimiento
   const nuevoVencimiento = sumarDias(base, 30)
+  const planViejoDeBaja = alumno.plan_id && !planes.some((p) => p.id === alumno.plan_id)
+
+  // Cuánto por transferencia y cuánto en efectivo
+  const conComprobante = Boolean(comprobante) && usarComprobante
+  const transferenciaManual = esDueno && !conComprobante && modoDueno !== 'Efectivo'
+  const transferencia = conComprobante || transferenciaManual
+    ? (modoDueno === 'Transferencia' && !conComprobante ? precio : Number(String(transferenciaTxt).replace(/\D/g, '')) || 0)
+    : 0
+  const efectivo = precio - transferencia
+  const problema = !plan ? 'Elegí un plan.'
+    : transferencia > precio ? `La transferencia (${formatearPesos(transferencia)}) supera la cuota de ${formatearPesos(precio)}. Elegí el plan que corresponde o corregí el monto.`
+    : (conComprobante || transferenciaManual) && transferencia <= 0 ? 'Indicá cuánto transfirió.'
+    : ''
+
+  const verComprobante = async () => {
+    const { data, error } = await supabase.storage.from('comprobantes').createSignedUrl(comprobante.archivo_path, 120)
+    if (error) return setError('No se pudo abrir el comprobante.')
+    window.open(data.signedUrl, '_blank', 'noopener')
+  }
 
   const cobrar = async () => {
     setError('')
+    if (problema) return setError(problema)
     setEnviando(true)
-    const { data, error } = await supabase.rpc('registrar_pago_cuota', { p_alumno_id: alumno.alumno_id, p_medio: medio })
+    const { data, error } = await supabase.rpc('cobrar_cuota', {
+      p_alumno_id: alumno.alumno_id,
+      p_plan_id: plan.id,
+      p_efectivo: efectivo,
+      p_transferencia: transferencia,
+      p_comprobante_id: conComprobante ? comprobante.id : null,
+    })
     setEnviando(false)
     if (error) return setError(mensajeError(error))
     alCobrar({
-      medio,
       nombre: alumno.nombre,
       apellido: alumno.apellido,
-      monto: alumno.precio_plan,
+      plan: plan.nombre,
+      detalle: [transferencia > 0 && `${formatearPesos(transferencia)} por transferencia`, efectivo > 0 && `${formatearPesos(efectivo)} en efectivo`].filter(Boolean).join(' + '),
       vencimiento: data,
       primerPago,
       vuelveInactivo,
     })
   }
+
+  const textoBoton = enviando ? 'Registrando…'
+    : transferencia > 0 && efectivo > 0 ? `Recibí ${formatearPesos(efectivo)} en efectivo + ${formatearPesos(transferencia)} por transferencia`
+    : transferencia > 0 ? `Recibí ${formatearPesos(transferencia)} por transferencia`
+    : `Recibí ${formatearPesos(efectivo)} en efectivo`
 
   return (
     <div className="space-y-4 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
@@ -378,13 +438,30 @@ function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar, esDueno 
         <CompletarFicha alumno={alumno} alGuardar={alCompletarFicha} alCancelar={alCancelar} />
       ) : (
         <>
+          {/* Plan */}
+          <div className="space-y-1.5">
+            <p className="text-sm text-neutral-400">Plan</p>
+            <div className="flex flex-wrap gap-2">
+              {planes.map((p) => (
+                <button key={p.id} type="button" onClick={() => setPlanId(p.id)}
+                  className={`rounded-lg border px-3 py-2 text-left text-sm ${planId === p.id ? 'border-white bg-white text-neutral-950' : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'}`}>
+                  <span className="block font-medium">{p.nombre}</span>
+                  <span className={`block tabular-nums ${planId === p.id ? 'text-neutral-700' : 'text-neutral-500'}`}>{formatearPesos(p.precio)}</span>
+                </button>
+              ))}
+            </div>
+            {planViejoDeBaja && (
+              <p className="text-xs text-amber-300">Su plan anterior ({alumno.plan}) ya no está a la venta: elegí uno de estos.</p>
+            )}
+          </div>
+
           <dl className="grid grid-cols-2 gap-y-2 text-sm sm:grid-cols-3">
             <div>
               <dt className="text-neutral-400">Cuota</dt>
-              <dd className="text-xl font-semibold">{formatearPesos(alumno.precio_plan)}</dd>
+              <dd className="text-xl font-semibold">{formatearPesos(precio)}</dd>
             </div>
             <div>
-              <dt className="text-neutral-400">Vence hoy</dt>
+              <dt className="text-neutral-400">Vence</dt>
               <dd>{primerPago ? 'Primer pago' : formatearFecha(alumno.fecha_vencimiento)}</dd>
             </div>
             <div>
@@ -400,31 +477,95 @@ function DetalleCobro({ alumno, alCancelar, alCompletarFicha, alCobrar, esDueno 
             <p className="text-sm text-sky-300">Vuelve después de estar inactivo: los 30 días cuentan desde hoy.</p>
           )}
 
-          {esDueno && (
-            <div className="flex gap-2">
-              {MEDIOS.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setMedio(m)}
-                  className={`flex-1 rounded-lg border px-3 py-2 text-sm ${
-                    medio === m ? 'border-white bg-white font-semibold text-neutral-950' : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'
-                  }`}
-                >
-                  {m}
+          {/* Transferencia que informó el alumno */}
+          {comprobante && (
+            <div className={`space-y-2 rounded-lg border px-3 py-3 text-sm ${usarComprobante ? 'border-sky-800 bg-sky-950/40' : 'border-neutral-800'}`}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-medium text-sky-200">
+                    Subió un comprobante por {formatearPesos(comprobante.monto_declarado)}
+                  </p>
+                  <p className="text-xs text-neutral-400">
+                    {formatearHora(comprobante.created_at)}{comprobante.cuenta_destino && ` · a ${comprobante.cuenta_destino}`}
+                  </p>
+                </div>
+                <button type="button" onClick={verComprobante} className="text-xs text-sky-300 underline hover:text-white">
+                  Ver comprobante
                 </button>
-              ))}
+              </div>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={usarComprobante} onChange={(e) => setUsarComprobante(e.target.checked)} className="h-4 w-4 accent-white" />
+                <span>Usar esta transferencia en el cobro</span>
+              </label>
+              {usarComprobante && (
+                <label className="flex items-center gap-2">
+                  <span className="text-neutral-400">Acreditado</span>
+                  <span className="flex items-center rounded-lg border border-neutral-700 bg-neutral-950 focus-within:border-neutral-400">
+                    <span className="pl-2 text-neutral-500">$</span>
+                    <input value={transferenciaTxt} onChange={(e) => setTransferenciaTxt(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                      inputMode="numeric" className="w-28 bg-transparent px-2 py-1.5 tabular-nums outline-none" aria-label="Monto acreditado por transferencia" />
+                  </span>
+                  {Number(transferenciaTxt) !== Math.round(comprobante.monto_declarado ?? 0) && (
+                    <span className="text-xs text-amber-300">el alumno informó {formatearPesos(comprobante.monto_declarado)}</span>
+                  )}
+                </label>
+              )}
             </div>
           )}
 
-          <Aviso tipo="error" texto={error} />
+          {/* El dueño puede anotar una transferencia sin comprobante */}
+          {esDueno && !conComprobante && (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                {['Efectivo', 'Transferencia', 'Mixto'].map((m) => (
+                  <button key={m} type="button" onClick={() => setModoDueno(m)}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-sm ${modoDueno === m ? 'border-white bg-white font-semibold text-neutral-950' : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'}`}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+              {modoDueno === 'Mixto' && (
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-neutral-400">Por transferencia</span>
+                  <span className="flex items-center rounded-lg border border-neutral-700 bg-neutral-950 focus-within:border-neutral-400">
+                    <span className="pl-2 text-neutral-500">$</span>
+                    <input value={transferenciaTxt} onChange={(e) => setTransferenciaTxt(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                      inputMode="numeric" className="w-28 bg-transparent px-2 py-1.5 tabular-nums outline-none" aria-label="Monto por transferencia" />
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
 
-          <div className="flex justify-end gap-2">
+          {/* Resumen del cobro */}
+          {(conComprobante || transferenciaManual) && !problema && (
+            <dl className="grid grid-cols-2 gap-2 rounded-lg bg-neutral-950 px-3 py-2 text-sm">
+              <div>
+                <dt className="text-neutral-400">Por transferencia</dt>
+                <dd className="font-semibold tabular-nums">{formatearPesos(transferencia)}</dd>
+              </div>
+              <div>
+                <dt className="text-neutral-400">{efectivo > 0 ? 'Resta en efectivo' : 'En efectivo'}</dt>
+                <dd className={`font-semibold tabular-nums ${efectivo > 0 ? 'text-emerald-300' : ''}`}>{formatearPesos(efectivo)}</dd>
+              </div>
+            </dl>
+          )}
+
+          {!esDueno && !comprobante && (
+            <p className="text-xs text-neutral-500">
+              ¿Paga una parte por transferencia? Que suba el comprobante desde su app (Mensualidad → Pagar por transferencia)
+              con lo que transfirió: acá va a aparecer y cobrás el resto en efectivo.
+            </p>
+          )}
+
+          <Aviso tipo="error" texto={error || problema} />
+
+          <div className="flex flex-wrap justify-end gap-2">
             <button onClick={alCancelar} className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800">
               Cancelar
             </button>
-            <button onClick={cobrar} disabled={enviando} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
-              {enviando ? 'Registrando…' : `Recibí ${formatearPesos(alumno.precio_plan)} ${medio === 'Efectivo' ? 'en efectivo' : 'por transferencia'}`}
+            <button onClick={cobrar} disabled={enviando || Boolean(problema)} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
+              {textoBoton}
             </button>
           </div>
         </>
@@ -1187,7 +1328,7 @@ function CobrosDueno() {
         Lo que cobres acá queda registrado a tu nombre, fuera de la caja de los recepcionistas: no cambia el cierre de ningún turno.
         La caja y el kiosco los manejan los recepcionistas.
       </div>
-      <div className="flex gap-1 overflow-x-auto border-b border-neutral-800">
+      <div className="flex gap-1 overflow-x-auto border-b border-neutral-800 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {PESTANAS_DUENO.map((p) => (
           <button
             key={p.id}

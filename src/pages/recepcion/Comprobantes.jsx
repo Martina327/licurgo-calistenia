@@ -7,7 +7,7 @@ import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import EstadoComprobante from '../../components/comprobantes/EstadoComprobante'
 
-const CAMPOS = 'id, alumno_id, archivo_path, monto_declarado, estado, motivo_rechazo, created_at, revisado_at, nombre, apellido, dni, telefono, fecha_vencimiento, precio_plan, estado_alumno, monto_acreditado, revisado_por_nombre, cuenta_destino'
+const CAMPOS = 'id, alumno_id, archivo_path, monto_declarado, estado, motivo_rechazo, created_at, revisado_at, nombre, apellido, dni, telefono, fecha_vencimiento, precio_plan, estado_alumno, monto_acreditado, revisado_por_nombre, cuenta_destino, plan'
 const DURACION_LINK = 600 // segundos que vale el link firmado del archivo (bucket privado)
 
 const fechaHora = (iso) =>
@@ -133,7 +133,8 @@ function Miniatura({ url, pdf }) {
 }
 
 function Detalle({ c, url, faltantes, onTerminado, onError }) {
-  const [monto, setMonto] = useState(String(Math.round(c.precio_plan ?? c.monto_declarado ?? 0) || ''))
+  // Por defecto se acredita lo que informó el alumno (puede ser una parte, si paga el resto en efectivo)
+  const [monto, setMonto] = useState(String(Math.round(c.monto_declarado ?? c.precio_plan ?? 0) || ''))
   const [rechazando, setRechazando] = useState(false)
   const [motivo, setMotivo] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -142,6 +143,7 @@ function Detalle({ c, url, faltantes, onTerminado, onError }) {
   const vence = nuevoVencimiento(c.fecha_vencimiento, hoyAR())
   const fichaIncompleta = pendiente && !c.fecha_vencimiento && faltantes.length > 0
   const montoDistinto = c.monto_declarado && c.precio_plan && Number(c.monto_declarado) !== Number(c.precio_plan)
+  const falta = pendiente && c.monto_declarado && c.precio_plan ? Number(c.precio_plan) - Number(c.monto_declarado) : 0
 
   const aprobar = async () => {
     const m = leerMonto(monto)
@@ -199,6 +201,7 @@ function Detalle({ c, url, faltantes, onTerminado, onError }) {
           <dt className="text-neutral-400">Alumno</dt><dd>{c.nombre} {c.apellido} · DNI {c.dni}</dd>
           <dt className="text-neutral-400">Enviado</dt><dd>{fechaHora(c.created_at)}</dd>
           {c.cuenta_destino && <><dt className="text-neutral-400">Transfirió a</dt><dd className="font-medium">{c.cuenta_destino}</dd></>}
+          {c.plan && <><dt className="text-neutral-400">Plan</dt><dd>{c.plan} · {formatearPesos(c.precio_plan)}</dd></>}
           <dt className="text-neutral-400">Declara</dt>
           <dd>{c.monto_declarado ? formatearPesos(c.monto_declarado) : '—'}{montoDistinto && <span className="text-amber-300"> · la cuota es {formatearPesos(c.precio_plan)}</span>}</dd>
           <dt className="text-neutral-400">Vencimiento</dt><dd>{c.fecha_vencimiento ? formatearFecha(c.fecha_vencimiento) : 'Primer pago'}</dd>
@@ -212,6 +215,15 @@ function Detalle({ c, url, faltantes, onTerminado, onError }) {
           <div className="rounded-lg bg-amber-950/70 px-3 py-2 text-amber-200">
             Es su primer pago y le falta completar la ficha ({faltantes.join(', ')}).{' '}
             <Link to={`/recepcion/alumnos/${c.alumno_id}?editar=1`} className="font-semibold underline">Completar ficha</Link> y después aprobá.
+          </div>
+        )}
+
+        {falta > 0 && !fichaIncompleta && (
+          <div className="rounded-lg border border-sky-900 bg-sky-950/40 px-3 py-2 text-sky-200">
+            Transfirió una parte: le faltan <span className="font-semibold">{formatearPesos(falta)}</span>.
+            Si el resto lo paga en efectivo, cobralo en{' '}
+            <Link to="/recepcion/caja" className="font-semibold underline">Caja → Cobrar cuota</Link>:
+            ahí aparece esta transferencia y se registra junto con el efectivo en un solo cobro.
           </div>
         )}
 

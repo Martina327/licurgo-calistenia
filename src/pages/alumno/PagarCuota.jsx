@@ -10,12 +10,14 @@ import DatosTransferencia from '../../components/comprobantes/DatosTransferencia
 import SubirComprobante from '../../components/comprobantes/SubirComprobante'
 import { IconoCheck } from '../../components/Iconos'
 
-// Pagar por transferencia (B4 · CU07): pantalla aparte, se abre desde Inicio.
+// Pagar por transferencia (B4 · CU07): pantalla aparte, se abre desde Mensualidad.
+//   Plan: el alumno elige entre los que ofrece el dueño (arranca en el suyo).
 //   1. Datos de la cuenta (copiar alias / CBU)   2. Subir el comprobante
 export default function PagarCuota() {
   const { perfil } = useAuth()
-  const { cargando, membresia, datosCobro, comprobantes, error, recargar } = useMiMembresia()
+  const { cargando, membresia, datosCobro, comprobantes, planes, error, recargar } = useMiMembresia()
   const [enviado, setEnviado] = useState(false)
+  const [elegido, setElegido] = useState(null)
 
   if (cargando) return <Cargando />
   if (!membresia) return <p className="text-neutral-400">No encontramos tu ficha de alumno.</p>
@@ -31,6 +33,8 @@ export default function PagarCuota() {
   }
 
   const { modo, ultimo } = situacionComprobantes(comprobantes)
+  // Plan elegido: el que tocó, o el suyo si sigue a la venta, o el primero
+  const plan = planes.find((p) => p.id === elegido) ?? planes.find((p) => p.id === membresia.plan_id) ?? planes[0] ?? null
   if (modo === 'pendiente') {
     return (
       <Estado icono={<span className="h-3 w-3 animate-pulse rounded-full bg-amber-400" />} tono="bg-amber-500/15"
@@ -52,9 +56,40 @@ export default function PagarCuota() {
         </div>
       )}
 
+      {planes.length > 1 && (
+        <section className="space-y-2.5">
+          <h2 className="px-1 text-sm font-medium text-neutral-300">Elegí tu plan</h2>
+          <div role="radiogroup" className="space-y-2">
+            {planes.map((p) => {
+              const activo = p.id === plan?.id
+              return (
+                <button key={p.id} role="radio" aria-checked={activo} onClick={() => setElegido(p.id)}
+                  className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left ${activo ? 'border-white bg-neutral-900' : 'border-neutral-800 bg-neutral-900/50'}`}>
+                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${activo ? 'border-white' : 'border-neutral-600'}`}>
+                    {activo && <span className="h-2.5 w-2.5 rounded-full bg-white" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium">
+                      {p.nombre}
+                      {p.id === membresia.plan_id && <span className="ml-2 text-xs font-normal text-neutral-500">tu plan actual</span>}
+                    </span>
+                    {(p.descripcion || p.dias_por_semana) && (
+                      <span className="block text-sm text-neutral-400">
+                        {[p.dias_por_semana && `${p.dias_por_semana} días por semana`, p.descripcion].filter(Boolean).join(' · ')}
+                      </span>
+                    )}
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums">{formatearPesos(p.precio)}</span>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
       <div className="text-center">
-        <p className="text-sm text-neutral-400">Cuota a transferir</p>
-        <p className="text-4xl font-bold tabular-nums">{formatearPesos(membresia.precio_plan)}</p>
+        <p className="text-sm text-neutral-400">Cuota a transferir{plan && planes.length > 1 ? ` · ${plan.nombre}` : ''}</p>
+        <p className="text-4xl font-bold tabular-nums">{formatearPesos(plan?.precio ?? membresia.precio_plan)}</p>
       </div>
 
       <Paso n={1} titulo="Transferí a esta cuenta" sinRelleno>
@@ -62,7 +97,7 @@ export default function PagarCuota() {
       </Paso>
 
       <Paso n={2} titulo="Subí el comprobante">
-        <SubirComprobante alumnoId={perfil.id} montoSugerido={membresia.precio_plan}
+        <SubirComprobante key={plan?.id} alumnoId={perfil.id} planId={plan?.id ?? null} montoSugerido={plan?.precio ?? membresia.precio_plan}
           onSubido={() => { setEnviado(true); recargar() }} />
       </Paso>
     </div>

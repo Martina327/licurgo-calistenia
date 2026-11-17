@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import InstalarApp from './InstalarApp'
 import LayoutAlumno from './LayoutAlumno'
 import {
-  IconoAlumno, IconoBanco, IconoBolsa, IconoCaja, IconoCapas, IconoCerrar, IconoCorazon, IconoGrafico, IconoInicio,
+  IconoAlumno, IconoBanco, IconoMensualidad, IconoBolsa, IconoCaja, IconoCapas, IconoCerrar, IconoCorazon, IconoGrafico, IconoInicio,
   IconoLista, IconoMenu, IconoMostrador, IconoPersonas, IconoPuerta, IconoRecibo, IconoRutina, IconoSalir,
 } from './Iconos'
 
@@ -13,6 +13,7 @@ import {
 const ADMINISTRACION = {
   titulo: 'Administración',
   items: [
+    { to: '/admin/planes', texto: 'Planes de cuota', icono: IconoMensualidad },
     { to: '/admin/productos', texto: 'Productos', icono: IconoBolsa },
     { to: '/admin/salones', texto: 'Salones', icono: IconoPuerta },
     { to: '/admin/personal', texto: 'Personal', icono: IconoPersonas },
