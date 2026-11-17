@@ -100,3 +100,11 @@ Sobre una base ya cargada se corren solo las migraciones, en orden:
 - **Celular:** observaciones arriba y el editor abajo; en la lista de alumnos, el botón de observaciones es más grande para tocarlo en el gimnasio.
 
 ![Editor en la compu](img/coach-editor-compu.png)
+
+## Vista de solo lectura (16/11)
+
+- Al entrar a la rutina de un alumno, el coach ve la rutina **en limpio** (`components/rutinas/VistaRutina.jsx`): cada día en una tarjeta con sus bloques, series × repeticiones, notas, descansos y bi-series. En la compu, los días en dos columnas; en el celular, uno abajo del otro.
+- Para cambiar algo toca **Editar rutina** y se abre el editor de siempre. Al **Guardar** vuelve a la vista. **Salir de edición** vuelve sin cambios (si hay cambios sin guardar, pregunta antes de descartarlos).
+- Si el alumno no tiene rutina, sigue apareciendo **Armar rutina**, que abre directo el editor.
+
+![Vista de la rutina para el coach](img/coach-vista-rutina.png)
