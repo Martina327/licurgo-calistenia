@@ -21,7 +21,7 @@
 - Se elige el plan y aparece la **transferencia que informó el alumno** (monto, cuándo, a qué cuenta, botón para ver el comprobante). Lo que falta se cobra **en efectivo**: *Recibí $25.000 en efectivo + $20.000 por transferencia*.
 - En la búsqueda, los alumnos con un comprobante sin revisar muestran *Transfirió $X*.
 - Una sola operación (`cobrar_cuota`): aprueba el comprobante, registra la transferencia y el efectivo (este último en el turno de caja) y suma 30 días.
-- Recepción no anota transferencias sin comprobante (regla de A2); el dueño, en *Cobros*, puede elegir Efectivo, Transferencia o Mixto.
+- **Sin comprobante** (16/11, migración `20261116_02`): recepción y dueño eligen **Efectivo, Transferencia o Mixto** y escriben cuánto transfirió. La recepcionista tiene que tildar *Vi la transferencia en el celular del alumno*; el ingreso queda con el detalle *(sin comprobante, verificada por recepción)* para que el dueño lo identifique en Ingresos. Esto reemplaza la regla anterior de A2 (recepción solo anotaba transferencias con comprobante).
 - En **Comprobantes**, si el alumno transfirió menos que la cuota se avisa cuánto falta y se manda a Caja; el monto a acreditar arranca en lo que informó el alumno.
 - Se sacó la barra de scroll que aparecía debajo de las pestañas de Caja en Windows.
 
