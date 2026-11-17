@@ -344,13 +344,15 @@ function CobrarCuota({ esDueno = false }) {
 // Cobro de una cuota: plan + cómo pagó.
 //   · Si el alumno subió un comprobante sin revisar, aparece con el monto que informó: esa es la
 //     parte por transferencia y el resto se cobra en efectivo (pago mixto). Se puede ver el comprobante.
-//   · Recepción no anota transferencias sin comprobante (regla de A2); el dueño sí.
+//   · Sin comprobante, se elige Efectivo, Transferencia o Mixto. La recepcionista tiene que confirmar
+//     que vio la transferencia en el celular del alumno; el ingreso queda marcado "sin comprobante".
 function DetalleCobro({ alumno, planes, comprobante, alCancelar, alCompletarFicha, alCobrar, esDueno }) {
   const planInicial = planes.find((p) => p.id === comprobante?.plan_id) ?? planes.find((p) => p.id === alumno.plan_id) ?? planes[0]
   const [planId, setPlanId] = useState(planInicial?.id ?? null)
   const [usarComprobante, setUsarComprobante] = useState(Boolean(comprobante))
   const [transferenciaTxt, setTransferenciaTxt] = useState(comprobante ? String(Math.round(comprobante.monto_declarado ?? 0)) : '')
   const [modoDueno, setModoDueno] = useState('Efectivo') // sin comprobante: Efectivo · Transferencia · Mixto
+  const [vista, setVista] = useState(false) // recepción: "vi la transferencia en el celular del alumno"
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
@@ -365,7 +367,7 @@ function DetalleCobro({ alumno, planes, comprobante, alCancelar, alCompletarFich
 
   // Cuánto por transferencia y cuánto en efectivo
   const conComprobante = Boolean(comprobante) && usarComprobante
-  const transferenciaManual = esDueno && !conComprobante && modoDueno !== 'Efectivo'
+  const transferenciaManual = !conComprobante && modoDueno !== 'Efectivo'
   const transferencia = conComprobante || transferenciaManual
     ? (modoDueno === 'Transferencia' && !conComprobante ? precio : Number(String(transferenciaTxt).replace(/\D/g, '')) || 0)
     : 0
@@ -373,7 +375,9 @@ function DetalleCobro({ alumno, planes, comprobante, alCancelar, alCompletarFich
   const problema = !plan ? 'Elegí un plan.'
     : transferencia > precio ? `La transferencia (${formatearPesos(transferencia)}) supera la cuota de ${formatearPesos(precio)}. Elegí el plan que corresponde o corregí el monto.`
     : (conComprobante || transferenciaManual) && transferencia <= 0 ? 'Indicá cuánto transfirió.'
+    : modoDueno === 'Mixto' && transferenciaManual && transferencia >= precio ? 'En un pago mixto la transferencia es una parte: si pagó todo por transferencia, elegí Transferencia.'
     : ''
+  const faltaVerla = transferenciaManual && !esDueno && !vista
 
   const verComprobante = async () => {
     const { data, error } = await supabase.storage.from('comprobantes').createSignedUrl(comprobante.archivo_path, 120)
@@ -513,8 +517,8 @@ function DetalleCobro({ alumno, planes, comprobante, alCancelar, alCompletarFich
             </div>
           )}
 
-          {/* El dueño puede anotar una transferencia sin comprobante */}
-          {esDueno && !conComprobante && (
+          {/* Sin comprobante: Efectivo · Transferencia · Mixto */}
+          {!conComprobante && (
             <div className="space-y-2">
               <div className="flex gap-2">
                 {['Efectivo', 'Transferencia', 'Mixto'].map((m) => (
@@ -531,6 +535,15 @@ function DetalleCobro({ alumno, planes, comprobante, alCancelar, alCompletarFich
                     <span className="pl-2 text-neutral-500">$</span>
                     <input value={transferenciaTxt} onChange={(e) => setTransferenciaTxt(e.target.value.replace(/\D/g, '').slice(0, 9))}
                       inputMode="numeric" className="w-28 bg-transparent px-2 py-1.5 tabular-nums outline-none" aria-label="Monto por transferencia" />
+                  </span>
+                </label>
+              )}
+              {modoDueno !== 'Efectivo' && !esDueno && (
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" checked={vista} onChange={(e) => setVista(e.target.checked)} className="mt-0.5 h-4 w-4 accent-white" />
+                  <span>
+                    Vi la transferencia en el celular del alumno
+                    <span className="block text-xs text-neutral-500">Queda registrada como "sin comprobante, verificada por recepción" y el dueño la ve en Ingresos.</span>
                   </span>
                 </label>
               )}
@@ -551,12 +564,6 @@ function DetalleCobro({ alumno, planes, comprobante, alCancelar, alCompletarFich
             </dl>
           )}
 
-          {!esDueno && !comprobante && (
-            <p className="text-xs text-neutral-500">
-              ¿Paga una parte por transferencia? Que suba el comprobante desde su app (Mensualidad → Pagar por transferencia)
-              con lo que transfirió: acá va a aparecer y cobrás el resto en efectivo.
-            </p>
-          )}
 
           <Aviso tipo="error" texto={error || problema} />
 
@@ -564,7 +571,7 @@ function DetalleCobro({ alumno, planes, comprobante, alCancelar, alCompletarFich
             <button onClick={alCancelar} className="rounded-lg border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800">
               Cancelar
             </button>
-            <button onClick={cobrar} disabled={enviando || Boolean(problema)} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
+            <button onClick={cobrar} disabled={enviando || Boolean(problema) || faltaVerla} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 disabled:opacity-50">
               {textoBoton}
             </button>
           </div>
