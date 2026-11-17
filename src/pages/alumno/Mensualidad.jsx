@@ -94,15 +94,13 @@ function TarjetaCuota({ m }) {
       ) : estado === 'Vencida' ? (
         <div className="mt-3">
           <p className="text-5xl font-bold tracking-tight">Vencida</p>
-          <p className="mt-1 text-sm text-red-200">Hace {Math.abs(dias)} día{Math.abs(dias) === 1 ? '' : 's'} · renovala para seguir entrenando</p>
+          <p className="mt-1 text-sm text-red-200">Venció el {formatearFecha(m.fecha_vencimiento)} · renovala para seguir entrenando</p>
         </div>
       ) : (
         <div className="mt-3">
-          <p className="flex items-baseline gap-2">
-            <span className="text-6xl font-bold tabular-nums tracking-tight">{dias}</span>
-            <span className="text-lg text-neutral-300">{dias === 1 ? 'día' : 'días'}</span>
-          </p>
-          <p className="text-sm text-neutral-300">{dias === 0 ? 'Vence hoy' : `Vence el ${formatearFecha(m.fecha_vencimiento)}`}</p>
+          {/* La fecha en que tiene que pagar, no los días que faltan (pedido del dueño) */}
+          <p className="text-sm text-neutral-300">{dias === 0 ? 'Pagá hoy' : 'Pagá hasta el'}</p>
+          <p className="text-5xl font-bold tabular-nums tracking-tight">{formatearFecha(m.fecha_vencimiento)}</p>
         </div>
       )}
 

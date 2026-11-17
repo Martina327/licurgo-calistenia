@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatearPesos, mensajeError } from '../../lib/utils'
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
+import { IconoBasurero, IconoLapiz } from '../../components/Iconos'
 
 // Salones en alquiler (CU16 · A4). SOLO SuperAdmin.
 //   · Alta con nombre, precio por hora y precio mensual (opcional).
@@ -60,11 +61,8 @@ export default function Salones() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Salones</h1>
-          <p className="text-sm text-neutral-400">Precios de alquiler por hora y por mes. Para una promo, cambiá el precio y volvelo a su valor cuando termine.</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Salones</h1>
         {!mostrarAlta && (
           <button
             onClick={() => { setMostrarAlta(true); setEditando(null); setAviso('') }}
@@ -109,15 +107,31 @@ export default function Salones() {
                     {s.precio_mensual ? `${formatearPesos(s.precio_mensual)} por mes` : 'Sin alquiler mensual'}
                   </p>
                 </div>
-                <div className="flex gap-3 text-sm">
-                  {s.activo && (
-                    <button onClick={() => { setEditando(s.id); setMostrarAlta(false); setAviso('') }} className="text-neutral-300 hover:underline">
-                      Editar
+                <div className="flex gap-1">
+                  {s.activo ? (
+                    <>
+                      <button
+                        onClick={() => { setEditando(editando === s.id ? null : s.id); setMostrarAlta(false); setAviso('') }}
+                        aria-label={`Editar ${s.nombre}`}
+                        title="Editar"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-800 text-white hover:bg-neutral-800"
+                      >
+                        <IconoLapiz className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => cambiarActivo(s)}
+                        aria-label={`Dar de baja ${s.nombre}`}
+                        title="Dar de baja"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-800 text-red-400 hover:bg-red-950"
+                      >
+                        <IconoBasurero className="h-4 w-4" />
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={() => cambiarActivo(s)} className="rounded-lg border border-emerald-800 px-3 py-1.5 text-sm text-emerald-300 hover:bg-emerald-950">
+                      Reactivar
                     </button>
                   )}
-                  <button onClick={() => cambiarActivo(s)} className={s.activo ? 'text-red-400 hover:underline' : 'text-emerald-400 hover:underline'}>
-                    {s.activo ? 'Dar de baja' : 'Reactivar'}
-                  </button>
                 </div>
               </div>
               {editando === s.id && <FormSalon salon={s} alCancelar={() => setEditando(null)} alGuardar={terminar} />}

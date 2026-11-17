@@ -88,3 +88,6 @@ export const IconoCapas = (p) => (
 export const IconoLista = (p) => (
   <Base {...p}><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" /></Base>
 )
+export const IconoLlave = (p) => (
+  <Base {...p}><circle cx="8" cy="15" r="4" /><path d="m10.8 12.2 9.2-9.2M16 7l3 3M14 9l2 2" /></Base>
+)

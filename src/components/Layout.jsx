@@ -23,7 +23,7 @@ const ADMINISTRACION = {
 const recepcion = (textoCaja) => ({
   titulo: 'Recepción',
   items: [
-    { to: '/recepcion', texto: 'Mostrador', end: true, icono: IconoMostrador },
+    { to: '/recepcion', texto: 'Mostrador', end: true, extra: '/recepcion/presentes', icono: IconoMostrador },
     { to: '/recepcion/alumnos', texto: 'Alumnos', icono: IconoAlumno },
     { to: '/recepcion/caja', texto: textoCaja, icono: IconoCaja },
     { to: '/recepcion/comprobantes', texto: 'Comprobantes', contador: 'comprobantes', icono: IconoRecibo },
@@ -40,7 +40,7 @@ const entrenamiento = (textoRutinas) => ({
 })
 const MENU = {
   SuperAdmin: [
-    { titulo: null, items: [{ to: '/admin', texto: 'Inicio', end: true, icono: IconoInicio }] },
+    { titulo: null, items: [{ to: '/admin', texto: 'Inicio', end: true, extra: '/admin/cierres', icono: IconoInicio }] },
     ADMINISTRACION,
     recepcion('Cobros'),
     entrenamiento('Rutinas'),
@@ -96,7 +96,9 @@ function LayoutStaff() {
     }
   }
 
-  const actual = items.find((i) => (i.end ? pathname === i.to : pathname.startsWith(i.to)))
+  // Pantalla actual (para el título de arriba); `extra` son pantallas que se abren desde esa sección
+  const coincide = (i) => (i.end ? pathname === i.to : pathname.startsWith(i.to)) || (i.extra && pathname.startsWith(i.extra))
+  const actual = items.find(coincide)
 
   return (
     <div className="min-h-screen">
@@ -124,7 +126,7 @@ function LayoutStaff() {
                 <NavLink
                   key={i.to}
                   to={i.to}
-                  end={i.end}
+                  end={i.end && !(i.extra && pathname.startsWith(i.extra))}
                   className={({ isActive }) =>
                     `relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${
                       isActive ? 'bg-neutral-900 font-medium text-white' : 'text-neutral-400 hover:bg-neutral-900/60 hover:text-white'
