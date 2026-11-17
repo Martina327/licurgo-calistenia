@@ -7,6 +7,7 @@ import { aPayload, clave, desdePayload, diaVacio, payloadDesdeBase, validarRutin
 import Cargando from '../../components/Cargando'
 import Aviso from '../../components/Aviso'
 import EditorRutina from '../../components/rutinas/EditorRutina'
+import VistaRutina from '../../components/rutinas/VistaRutina'
 import { EtiquetaTipo } from './ObservacionesAlumno'
 
 // Rutina activa de Supabase → estado del editor
@@ -23,6 +24,7 @@ const aEstado = (r) => ({
 // Para no escribir lo mismo a cada alumno, el editor tiene menús para pegar plantillas,
 // copiar/pegar y guardar como plantilla en tres niveles: sección, día y planificación.
 // Lo que se carga es una base: se modifica antes de guardar.
+// Al entrar se ve la rutina en limpio (solo lectura); el editor se abre con "Editar rutina".
 export default function RutinaAlumno() {
   const { alumnoId } = useParams()
   const [alumno, setAlumno] = useState(null)
@@ -36,6 +38,7 @@ export default function RutinaAlumno() {
   const [aviso, setAviso] = useState(null)
   const [plantillas, setPlantillas] = useState([])
   const [diasHechos, setDiasHechos] = useState(new Set()) // días que el alumno completó esta semana
+  const [editando, setEditando] = useState(false)
 
   const cargar = async () => {
     const [alumnoRes, ejerciciosRes, rutinaRes, obsRes, plantillasRes] = await Promise.all([
@@ -75,6 +78,7 @@ export default function RutinaAlumno() {
   const cambiar = (nueva) => { setRutina(nueva); setCambios(true) }
   const empezarRutina = () => {
     setRutina({ id: null, nombre: '', objetivo: '', dias: [diaVacio()] })
+    setEditando(true)
     setEditorKey(clave())
     setCambios(true)
     setAviso({ tipo: 'ok', texto: 'Rutina nueva. Usá "☰ Planificación" para pegar una planificación entera, o los menús de cada día y sección.' })
@@ -111,7 +115,17 @@ export default function RutinaAlumno() {
     setGuardando(false)
     if (error) return setAviso({ tipo: 'error', texto: mensajeError(error) })
     await cargar()
+    setEditando(false)
     setAviso({ tipo: 'ok', texto: 'Rutina guardada. El alumno ya la ve.' })
+  }
+
+  const editar = () => { setAviso(null); setEditando(true) }
+  // Salir del editor sin guardar: vuelve a lo guardado
+  const salir = async () => {
+    if (cambios && !window.confirm('Tenés cambios sin guardar. ¿Descartarlos?')) return
+    setAviso(null)
+    if (cambios) await cargar()
+    setEditando(false)
   }
 
   if (cargando) return <Cargando />
@@ -121,7 +135,14 @@ export default function RutinaAlumno() {
     <div className="space-y-4">
       <div>
         <Link to="/coach" className="text-sm text-neutral-400 hover:text-white">← Alumnos</Link>
-        <h1 className="mt-1 text-xl font-semibold">Rutina de {alumno.nombre} {alumno.apellido}</h1>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-xl font-semibold">Rutina de {alumno.nombre} {alumno.apellido}</h1>
+          {rutina?.id && !editando && (
+            <button onClick={editar} className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950">
+              Editar rutina
+            </button>
+          )}
+        </div>
         <p className="text-sm text-neutral-500">
           {alumno.plan ?? 'Sin plan'}
           {rutina?.fecha_actualizacion && ` · Actualizada el ${formatearFecha(rutina.fecha_actualizacion)}`}
@@ -151,6 +172,8 @@ export default function RutinaAlumno() {
           </button>
           <p className="text-xs text-neutral-500">Después podés pegar una planificación, un día o cada sección desde plantillas o desde otro alumno.</p>
         </div>
+      ) : !editando ? (
+        <VistaRutina value={rutina} ejercicios={ejercicios} diasHechos={diasHechos} />
       ) : (
         <>
           <EditorRutina key={editorKey} value={rutina} onChange={cambiar} ejercicios={ejercicios} diasHechos={diasHechos}
@@ -160,9 +183,9 @@ export default function RutinaAlumno() {
             <span className={`mr-auto text-sm ${cambios ? 'text-amber-300' : 'text-neutral-500'}`}>
               {cambios ? 'Cambios sin guardar' : 'Todo guardado'}
             </span>
-            {cambios && rutina.id && (
-              <button onClick={cargar} disabled={guardando} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:text-white">
-                Descartar
+            {rutina.id && (
+              <button onClick={salir} disabled={guardando} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:text-white">
+                {cambios ? 'Descartar' : 'Salir de edición'}
               </button>
             )}
             <button onClick={guardar} disabled={guardando || !cambios}
